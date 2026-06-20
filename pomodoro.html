@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>番茄钟 - Pomodoro Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --pink: #FC90AO;
+            --light-green: #DOD37E;
+            --green: #167COF;
+            --dark: #191813;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--dark) 0%, var(--green) 50%, var(--pink) 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--dark);
+            transition: background 0.5s ease;
+        }
+
+        body.work-mode {
+            background: linear-gradient(135deg, var(--dark) 0%, var(--pink) 50%, var(--light-green) 100%);
+        }
+
+        body.break-mode {
+            background: linear-gradient(135deg, var(--dark) 0%, var(--green) 50%, var(--light-green) 100%);
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            width: 420px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, var(--pink) 0%, transparent 70%);
+            opacity: 0.3;
+            animation: float 8s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(10%, 10%) rotate(5deg); }
+        }
+
+        h1 {
+            font-size: 2.2em;
+            margin-bottom: 5px;
+            color: var(--pink);
+            text-shadow: 2px 2px 4px rgba(252, 144, 175, 0.3);
+            position: relative;
+            z-index: 1;
+        }
+
+        .subtitle {
+            font-size: 0.9em;
+            color: var(--green);
+            margin-bottom: 25px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .mode-selector {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .mode-btn {
+            padding: 12px 24px;
+            border: 2px solid transparent;
+            border-radius: 25px;
+            background: linear-gradient(135deg, rgba(22, 124, 207, 0.1) 0%, rgba(252, 144, 175, 0.1) 100%);
+            color: var(--dark);
+            cursor: pointer;
+            transition: all 0.4s ease;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .mode-btn:hover {
+            background: linear-gradient(135deg, rgba(22, 124, 207, 0.2) 0%, rgba(252, 144, 175, 0.2) 100%);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, var(--pink) 0%, var(--green) 100%);
+            color: white;
+            border-color: var(--pink);
+            box-shadow: 0 8px 25px rgba(252, 144, 175, 0.4);
+        }
+
+        .timer-container {
+            position: relative;
+            width: 280px;
+            height: 280px;
+            margin: 0 auto 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .progress-ring {
+            transform: rotate(-90deg);
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(0 0 10px rgba(252, 144, 175, 0.5));
+        }
+
+        .progress-ring__circle-bg {
+            fill: none;
+            stroke: rgba(22, 124, 207, 0.1);
+            stroke-width: 12;
+        }
+
+        .progress-ring__circle {
+            fill: none;
+            stroke: url(#gradient);
+            stroke-width: 12;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.1s linear;
+            filter: drop-shadow(0 0 8px rgba(252, 144, 175, 0.8));
+        }
+
+        .progress-ring__circle.break {
+            stroke: url(#gradient-break);
+        }
+
+        .gradient-defs {
+            position: absolute;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+        }
+
+        .time-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 4.5em;
+            font-weight: bold;
+            background: linear-gradient(135deg, var(--pink) 0%, var(--green) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(252, 144, 175, 0.3);
+        }
+
+        .time-display.countdown-animation {
+            animation: pulse 0.5s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 25px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .control-btn {
+            padding: 14px 35px;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .control-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .control-btn:hover::before {
+            left: 100%;
+        }
+
+        .start-btn {
+            background: linear-gradient(135deg, var(--pink) 0%, #ff6b8a 100%);
+            color: white;
+            box-shadow: 0 5px 20px rgba(252, 144, 175, 0.4);
+        }
+
+        .start-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(252, 144, 175, 0.6);
+        }
+
+        .pause-btn {
+            background: linear-gradient(135deg, var(--green) 0%, #0d8bf2 100%);
+            color: white;
+            box-shadow: 0 5px 20px rgba(22, 124, 207, 0.4);
+        }
+
+        .pause-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(22, 124, 207, 0.6);
+        }
+
+        .reset-btn {
+            background: linear-gradient(135deg, var(--dark) 0%, #2d2d2d 100%);
+            color: white;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .reset-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .session-info {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            font-size: 14px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, rgba(252, 144, 175, 0.1) 0%, rgba(22, 124, 207, 0.1) 100%);
+            border-radius: 20px;
+        }
+
+        .session-count {
+            font-size: 1.8em;
+            font-weight: bold;
+            background: linear-gradient(135deg, var(--pink) 0%, var(--green) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .session-label {
+            color: var(--green);
+            font-weight: 500;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, var(--pink) 0%, var(--green) 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(252, 144, 175, 0.5);
+            display: none;
+            animation: slideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 1000;
+            min-width: 250px;
+            text-align: left;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px) scale(0.8);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0) scale(1);
+                opacity: 1;
+            }
+        }
+
+        .notification-icon {
+            font-size: 2em;
+            margin-bottom: 8px;
+        }
+
+        .notification-title {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+
+        .notification-text {
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+
+        .settings {
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(22, 124, 207, 0.2);
+            position: relative;
+            z-index: 1;
+        }
+
+        .settings-toggle {
+            background: none;
+            border: none;
+            color: var(--green);
+            cursor: pointer;
+            font-size: 15px;
+            opacity: 0.8;
+            transition: all 0.3s;
+            padding: 8px 20px;
+            border-radius: 20px;
+        }
+
+        .settings-toggle:hover {
+            opacity: 1;
+            background: rgba(22, 124, 207, 0.1);
+        }
+
+        .settings-panel {
+            display: none;
+            margin-top: 20px;
+            text-align: left;
+            padding: 20px;
+            background: linear-gradient(135deg, rgba(252, 144, 175, 0.05) 0%, rgba(22, 124, 207, 0.05) 100%);
+            border-radius: 15px;
+        }
+
+        .settings-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .setting-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .setting-item label {
+            font-size: 14px;
+            color: var(--dark);
+            font-weight: 500;
+        }
+
+        .setting-item input {
+            width: 80px;
+            padding: 10px 12px;
+            border: 2px solid rgba(22, 124, 207, 0.2);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            color: var(--dark);
+            text-align: center;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .setting-item input:focus {
+            outline: none;
+            border-color: var(--pink);
+            box-shadow: 0 0 15px rgba(252, 144, 175, 0.3);
+        }
+
+        .floating-window {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.2);
+            display: none;
+            z-index: 999;
+            min-width: 200px;
+            animation: floatUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: move;
+        }
+
+        @keyframes floatUp {
+            from {
+                transform: translateY(100px) scale(0.9);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+        }
+
+        .floating-window.dragging {
+            cursor: grabbing;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .floating-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .floating-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--pink);
+        }
+
+        .floating-close {
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(252, 144, 175, 0.1);
+            color: var(--pink);
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .floating-close:hover {
+            background: var(--pink);
+            color: white;
+        }
+
+        .floating-time {
+            font-size: 2.5em;
+            font-weight: bold;
+            text-align: center;
+            background: linear-gradient(135deg, var(--pink) 0%, var(--green) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .floating-mode {
+            text-align: center;
+            font-size: 12px;
+            color: var(--green);
+            margin-top: 5px;
+        }
+
+        .floating-controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .floating-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .floating-btn.start {
+            background: linear-gradient(135deg, var(--pink) 0%, #ff6b8a 100%);
+            color: white;
+        }
+
+        .floating-btn.pause {
+            background: linear-gradient(135deg, var(--green) 0%, #0d8bf2 100%);
+            color: white;
+        }
+
+        .floating-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .float-toggle {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border: none;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--pink) 0%, var(--green) 100%);
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 8px 30px rgba(252, 144, 175, 0.5);
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+
+        .float-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 12px 40px rgba(252, 144, 175, 0.6);
+        }
+
+        .float-toggle.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .countdown-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2em;
+            color: var(--green);
+            font-weight: 600;
+            animation: breathe 2s ease-in-out infinite;
+        }
+
+        @keyframes breathe {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+            50% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+        }
+
+        .countdown-number {
+            font-size: 3em;
+            font-weight: bold;
+            color: var(--pink);
+        }
+
+        .countdown-label {
+            font-size: 0.8em;
+            color: var(--green);
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="gradient-defs">
+        <svg width="0" height="0">
+            <defs>
+                <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#FC90AO" />
+                    <stop offset="100%" stop-color="#167COF" />
+                </linearGradient>
+                <linearGradient id="gradient-break" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#DOD37E" />
+                    <stop offset="100%" stop-color="#167COF" />
+                </linearGradient>
+            </defs>
+        </svg>
+    </div>
+
+    <div class="container">
+        <h1>🍅 番茄钟</h1>
+        <p class="subtitle">专注工作，高效休息</p>
+        
+        <div class="mode-selector">
+            <button class="mode-btn active" data-mode="work">工作</button>
+            <button class="mode-btn" data-mode="shortBreak">短休息</button>
+            <button class="mode-btn" data-mode="longBreak">长休息</button>
+        </div>
+
+        <div class="timer-container">
+            <svg class="progress-ring" width="280" height="280">
+                <circle class="progress-ring__circle-bg" cx="140" cy="140" r="125"></circle>
+                <circle class="progress-ring__circle" cx="140" cy="140" r="125"></circle>
+            </svg>
+            
+            <div class="time-display" id="timeDisplay">25:00</div>
+            
+            <div class="countdown-indicator" id="countdownIndicator" style="display: none;">
+                <div>
+                    <div class="countdown-number" id="countdownNumber">3</div>
+                    <div class="countdown-label">准备开始</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="control-btn start-btn" id="startBtn">开始</button>
+            <button class="control-btn pause-btn" id="pauseBtn" style="display: none;">暂停</button>
+            <button class="control-btn reset-btn" id="resetBtn">重置</button>
+        </div>
+
+        <div class="session-info">
+            <div class="session-item">
+                <span class="session-count" id="completedCount">0</span>
+                <span class="session-label">完成番茄</span>
+            </div>
+            <div class="session-item">
+                <span class="session-count" id="currentSession">1</span>
+                <span class="session-label">当前周期</span>
+            </div>
+        </div>
+
+        <div class="settings">
+            <button class="settings-toggle" id="settingsToggle">⚙️ 设置</button>
+            <div class="settings-panel" id="settingsPanel">
+                <div class="setting-item">
+                    <label>工作时间 (分钟)</label>
+                    <input type="number" id="workTime" value="25" min="1" max="120">
+                </div>
+                <div class="setting-item">
+                    <label>短休息 (分钟)</label>
+                    <input type="number" id="shortBreakTime" value="5" min="1" max="60">
+                </div>
+                <div class="setting-item">
+                    <label>长休息 (分钟)</label>
+                    <input type="number" id="longBreakTime" value="15" min="1" max="120">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification">
+        <div class="notification-icon" id="notificationIcon">🍅</div>
+        <div class="notification-title">时间到！</div>
+        <div class="notification-text" id="notificationText">该休息一下了</div>
+    </div>
+
+    <button class="float-toggle" id="floatToggle">⏱️</button>
+    
+    <div class="floating-window" id="floatingWindow">
+        <div class="floating-header">
+            <span class="floating-title">🍅</span>
+            <button class="floating-close" id="floatingClose">×</button>
+        </div>
+        <div class="floating-time" id="floatingTime">25:00</div>
+        <div class="floating-mode" id="floatingMode">工作模式</div>
+        <div class="floating-controls">
+            <button class="floating-btn start" id="floatingStart">▶</button>
+            <button class="floating-btn pause" id="floatingPause">⏸</button>
+        </div>
+    </div>
+
+    <script>
+        const defaultSettings = {
+            work: 25 * 60,
+            shortBreak: 5 * 60,
+            longBreak: 15 * 60
+        };
+
+        let timeLeft = defaultSettings.work;
+        let isRunning = false;
+        let currentMode = 'work';
+        let completedPomodoros = 0;
+        let currentSession = 1;
+        let timerInterval = null;
+        let countdownInterval = null;
+        let isCountingDown = false;
+
+        const timeDisplay = document.getElementById('timeDisplay');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const modeButtons = document.querySelectorAll('.mode-btn');
+        const progressCircle = document.querySelector('.progress-ring__circle');
+        const completedCount = document.getElementById('completedCount');
+        const currentSessionEl = document.getElementById('currentSession');
+        const notification = document.getElementById('notification');
+        const notificationIcon = document.getElementById('notificationIcon');
+        const notificationText = document.getElementById('notificationText');
+        const settingsToggle = document.getElementById('settingsToggle');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const countdownIndicator = document.getElementById('countdownIndicator');
+        const countdownNumber = document.getElementById('countdownNumber');
+        
+        const workTimeInput = document.getElementById('workTime');
+        const shortBreakTimeInput = document.getElementById('shortBreakTime');
+        const longBreakTimeInput = document.getElementById('longBreakTime');
+
+        const floatToggle = document.getElementById('floatToggle');
+        const floatingWindow = document.getElementById('floatingWindow');
+        const floatingClose = document.getElementById('floatingClose');
+        const floatingTime = document.getElementById('floatingTime');
+        const floatingMode = document.getElementById('floatingMode');
+        const floatingStart = document.getElementById('floatingStart');
+        const floatingPause = document.getElementById('floatingPause');
+
+        const radius = 125;
+        const circumference = 2 * Math.PI * radius;
+        progressCircle.style.strokeDasharray = circumference;
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function updateDisplay() {
+            timeDisplay.textContent = formatTime(timeLeft);
+            floatingTime.textContent = formatTime(timeLeft);
+            updateProgress();
+            
+            const modeNames = {
+                work: '工作模式',
+                shortBreak: '短休息',
+                longBreak: '长休息'
+            };
+            floatingMode.textContent = modeNames[currentMode];
+        }
+
+        function updateProgress() {
+            let totalTime;
+            switch (currentMode) {
+                case 'work':
+                    totalTime = defaultSettings.work;
+                    break;
+                case 'shortBreak':
+                    totalTime = defaultSettings.shortBreak;
+                    break;
+                case 'longBreak':
+                    totalTime = defaultSettings.longBreak;
+                    break;
+            }
+            const progress = (totalTime - timeLeft) / totalTime;
+            const offset = circumference - (progress * circumference);
+            progressCircle.style.strokeDashoffset = offset;
+        }
+
+        function startCountdown() {
+            isCountingDown = true;
+            countdownIndicator.style.display = 'flex';
+            let count = 3;
+            countdownNumber.textContent = count;
+            
+            countdownInterval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownNumber.textContent = count;
+                    playCountdownSound();
+                } else {
+                    clearInterval(countdownInterval);
+                    countdownIndicator.style.display = 'none';
+                    isCountingDown = false;
+                    startTimer();
+                }
+            }, 1000);
+        }
+
+        function playCountdownSound() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 600;
+            oscillator.type = 'sine';
+            gainNode.gain.value = 0.2;
+            
+            oscillator.start();
+            
+            setTimeout(() => {
+                oscillator.stop();
+            }, 200);
+        }
+
+        function startTimer() {
+            if (isRunning) return;
+            isRunning = true;
+            startBtn.style.display = 'none';
+            pauseBtn.style.display = 'inline-block';
+            updateBodyClass();
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                
+                if (timeLeft <= 5 && timeLeft > 0) {
+                    timeDisplay.classList.add('countdown-animation');
+                    setTimeout(() => {
+                        timeDisplay.classList.remove('countdown-animation');
+                    }, 500);
+                }
+                
+                updateDisplay();
+
+                if (timeLeft <= 0) {
+                    completeSession();
+                }
+            }, 1000);
+        }
+
+        function updateBodyClass() {
+            document.body.classList.remove('work-mode', 'break-mode');
+            if (currentMode === 'work') {
+                document.body.classList.add('work-mode');
+            } else {
+                document.body.classList.add('break-mode');
+            }
+        }
+
+        function pauseTimer() {
+            isRunning = false;
+            clearInterval(timerInterval);
+            startBtn.style.display = 'inline-block';
+            pauseBtn.style.display = 'none';
+        }
+
+        function resetTimer() {
+            pauseTimer();
+            clearInterval(countdownInterval);
+            isCountingDown = false;
+            countdownIndicator.style.display = 'none';
+            
+            switch (currentMode) {
+                case 'work':
+                    timeLeft = defaultSettings.work;
+                    break;
+                case 'shortBreak':
+                    timeLeft = defaultSettings.shortBreak;
+                    break;
+                case 'longBreak':
+                    timeLeft = defaultSettings.longBreak;
+                    break;
+            }
+            updateDisplay();
+            updateBodyClass();
+        }
+
+        function completeSession() {
+            pauseTimer();
+
+            if (currentMode === 'work') {
+                completedPomodoros++;
+                completedCount.textContent = completedPomodoros;
+                
+                if (completedPomodoros % 4 === 0) {
+                    currentSession = Math.floor(completedPomodoros / 4) + 1;
+                    currentSessionEl.textContent = currentSession;
+                    showNotification('🎉', '完成一轮！', '太棒了！已经完成4个番茄，享受长休息吧！');
+                    switchMode('longBreak');
+                } else {
+                    showNotification('🍅', '番茄完成！', '工作完成，休息一下吧！');
+                    switchMode('shortBreak');
+                }
+            } else {
+                showNotification('☕', '休息结束！', '准备好继续工作了吗？');
+                switchMode('work');
+            }
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            modeButtons.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+            
+            if (mode === 'work') {
+                progressCircle.classList.remove('break');
+            } else {
+                progressCircle.classList.add('break');
+            }
+            
+            resetTimer();
+        }
+
+        function showNotification(icon, title, text) {
+            notificationIcon.textContent = icon;
+            notification.querySelector('.notification-title').textContent = title;
+            notificationText.textContent = text;
+            notification.style.display = 'block';
+            
+            playNotificationSound();
+            
+            if (Notification.permission === 'granted') {
+                new Notification('番茄钟', { body: text, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🍅</text></svg>' });
+            }
+
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 5000);
+        }
+
+        function playNotificationSound() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const notes = [523.25, 659.25, 783.99];
+            
+            notes.forEach((freq, index) => {
+                setTimeout(() => {
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.value = freq;
+                    oscillator.type = 'sine';
+                    gainNode.gain.value = 0.2;
+                    
+                    oscillator.start();
+                    
+                    setTimeout(() => {
+                        oscillator.stop();
+                    }, 200);
+                }, index * 150);
+            });
+        }
+
+        function updateSettings() {
+            const work = parseInt(workTimeInput.value) || 25;
+            const short = parseInt(shortBreakTimeInput.value) || 5;
+            const long = parseInt(longBreakTimeInput.value) || 15;
+
+            defaultSettings.work = work * 60;
+            defaultSettings.shortBreak = short * 60;
+            defaultSettings.longBreak = long * 60;
+
+            resetTimer();
+        }
+
+        function requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+
+        function toggleFloatingWindow() {
+            if (floatingWindow.style.display === 'block') {
+                floatingWindow.style.display = 'none';
+                floatToggle.classList.remove('hidden');
+            } else {
+                floatingWindow.style.display = 'block';
+                floatToggle.classList.add('hidden');
+            }
+        }
+
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        let windowPosition = { x: 0, y: 0 };
+
+        function startDrag(e) {
+            isDragging = true;
+            floatingWindow.classList.add('dragging');
+            
+            const rect = floatingWindow.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            document.addEventListener('mousemove', onDrag);
+            document.addEventListener('mouseup', stopDrag);
+        }
+
+        function onDrag(e) {
+            if (!isDragging) return;
+            
+            windowPosition.x = e.clientX - dragOffset.x;
+            windowPosition.y = e.clientY - dragOffset.y;
+            
+            windowPosition.x = Math.max(0, Math.min(windowPosition.x, window.innerWidth - floatingWindow.offsetWidth));
+            windowPosition.y = Math.max(0, Math.min(windowPosition.y, window.innerHeight - floatingWindow.offsetHeight));
+            
+            floatingWindow.style.left = `${windowPosition.x}px`;
+            floatingWindow.style.top = `${windowPosition.y}px`;
+            floatingWindow.style.right = 'auto';
+            floatingWindow.style.bottom = 'auto';
+        }
+
+        function stopDrag() {
+            isDragging = false;
+            floatingWindow.classList.remove('dragging');
+            document.removeEventListener('mousemove', onDrag);
+            document.removeEventListener('mouseup', stopDrag);
+        }
+
+        startBtn.addEventListener('click', startCountdown);
+        pauseBtn.addEventListener('click', pauseTimer);
+        resetBtn.addEventListener('click', resetTimer);
+
+        modeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                switchMode(btn.dataset.mode);
+            });
+        });
+
+        settingsToggle.addEventListener('click', () => {
+            settingsPanel.classList.toggle('show');
+        });
+
+        workTimeInput.addEventListener('change', updateSettings);
+        shortBreakTimeInput.addEventListener('change', updateSettings);
+        longBreakTimeInput.addEventListener('change', updateSettings);
+
+        floatToggle.addEventListener('click', toggleFloatingWindow);
+        floatingClose.addEventListener('click', toggleFloatingWindow);
+        floatingStart.addEventListener('click', () => {
+            if (!isRunning && !isCountingDown) {
+                startCountdown();
+            }
+        });
+        floatingPause.addEventListener('click', pauseTimer);
+
+        floatingWindow.addEventListener('mousedown', startDrag);
+
+        updateDisplay();
+        requestNotificationPermission();
+        updateBodyClass();
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (isRunning) {
+                    pauseTimer();
+                } else if (!isCountingDown) {
+                    startCountdown();
+                }
+            }
+            if (e.code === 'Escape') {
+                toggleFloatingWindow();
+            }
+        });
+    </script>
+</body>
+</html>
