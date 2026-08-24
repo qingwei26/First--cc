@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/First--cc/',
+  base: './',
   resolve: {
     alias: {
       '@': '/src',
