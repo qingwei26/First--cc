@@ -1,0 +1,27 @@
+{
+  "appId": "com.focusself.app",
+  "appName": "Focus Self",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#0f0f1a",
+      "showSpinner": true,
+      "spinnerColor": "#dc2626"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0f0f1a",
+      "overlaysWebView": false
+    },
+    "Keyboard": {
+      "resize": "none",
+      "style": "dark",
+      "scroll": true
+    }
+  }
+}
