@@ -31,3 +31,15 @@ lerna-debug.log*
 
 # Testing
 coverage
+
+# 嵌套 git 仓库（用户本地初始化的空仓库）
+focus-app/
+
+# 旧项目残留（戏曲舞台生成器）
+非物质戏曲舞台AI/
+
+# 临时脚本
+fix-module.cjs
+
+# 系统文件
+*.log
