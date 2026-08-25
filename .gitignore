@@ -44,3 +44,12 @@ build-single.cjs
 
 # 系统文件
 *.log
+
+# 构建压缩包
+focus-self-android.zip
+
+# Android 构建产物
+android/app/build
+android/.gradle
+android/build
+android/app/src/main/assets/public
