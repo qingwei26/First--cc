@@ -3,13 +3,6 @@ name: Build Android APK
 on:
   push:
     branches: [main]
-    paths:
-      - '**.js'
-      - '**.json'
-      - '**.css'
-      - '**.html'
-      - 'android/**'
-      - '!.github/**'
   workflow_dispatch:
 
 permissions:
@@ -36,6 +29,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: Install dependencies
         run: npm install
@@ -44,16 +39,18 @@ jobs:
         run: npm run build
 
       - name: Sync to Android
-        run: npx cap sync android
+        run: npx cap sync android --verbose
 
       - name: Build APK
+        working-directory: android
         run: |
-          cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: focus-self-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
