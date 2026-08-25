@@ -39,7 +39,7 @@ jobs:
         run: npm run build
 
       - name: Sync to Android
-        run: npx cap sync android --verbose
+        run: npx cap sync android
 
       - name: Build APK
         working-directory: android
