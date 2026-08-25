@@ -45,9 +45,25 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --info 2>&1 | tee build-output.log
+        continue-on-error: true
+
+      - name: Show Build Output on Failure
+        if: failure()
+        working-directory: android
+        run: |
+          echo "=== BUILD FAILED - Showing last 100 lines of output ==="
+          tail -n 100 build-output.log || echo "No log file found"
+
+      - name: Upload Build Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: android/build-output.log
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: focus-self-apk
