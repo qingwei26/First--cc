@@ -60,6 +60,13 @@ export default function ShortTermPlan() {
   const [countdownTaskId, setCountdownTaskId] = useState(null);
   const [remainingSec, setRemainingSec] = useState(0);
   const [countdownPaused, setCountdownPaused] = useState(false);
+  
+  // 休息板块状态
+  const [restEnabled, setRestEnabled] = useState(true);
+  const [restDurationMin, setRestDurationMin] = useState(5);
+  const [isResting, setIsResting] = useState(false);
+  const [restRemaining, setRestRemaining] = useState(0);
+  const [restPaused, setRestPaused] = useState(false);
 
   // 创建表单
   const [form, setForm] = useState({
@@ -135,6 +142,38 @@ export default function ShortTermPlan() {
     return () => clearInterval(timer);
   }, [countdownTaskId, countdownPaused]);
 
+  // 休息倒计时
+  useEffect(() => {
+    if (!isResting || restPaused) return;
+    const timer = setInterval(() => {
+      setRestRemaining(prev => {
+        if (prev <= 1) {
+          // 休息结束
+          setIsResting(false);
+          setRestRemaining(0);
+          playNotification('task', settings);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isResting, restPaused]);
+
+  // 开始休息
+  const startRest = () => {
+    setIsResting(true);
+    setRestRemaining(restDurationMin * 60);
+    setRestPaused(false);
+  };
+
+  // 跳过休息
+  const skipRest = () => {
+    setIsResting(false);
+    setRestRemaining(0);
+    setRestPaused(false);
+  };
+
   // 处理任务完成并播放声音
   const completeTaskWithSound = (taskId) => {
     if (!session) {
@@ -162,6 +201,13 @@ export default function ShortTermPlan() {
     if (willAllDone) {
       console.log('[ShortTermPlan] All day tasks completed, triggering celebration sound');
       setTimeout(() => playNotification('all', settings), 300);
+      // 全部完成后不进入休息
+      return;
+    }
+    
+    // 如果启用了休息模式，自动进入休息
+    if (restEnabled) {
+      setTimeout(() => startRest(), 500);
     }
   };
 
@@ -176,6 +222,9 @@ export default function ShortTermPlan() {
 
   // 点击任务：未完成 → 启动倒计时；倒计时中 → 暂停/继续；已完成 → 取消完成
   const handleTaskClick = (task) => {
+    // 休息期间禁用任务点击
+    if (isResting) return;
+    
     if (task.sessionCompleted) {
       // 已完成 → 取消完成
       toggleSessionTask(task.id);
@@ -449,6 +498,89 @@ export default function ShortTermPlan() {
             </div>
           </div>
 
+          {/* 休息设置 */}
+          <div className="mb-6 p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-slate-300 font-medium">🧘 任务间休息</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={restEnabled}
+                  onChange={(e) => setRestEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+            {restEnabled && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">休息时长：</span>
+                {[3, 5, 10, 15].map(min => (
+                  <button
+                    key={min}
+                    onClick={() => setRestDurationMin(min)}
+                    className={`px-2 py-1 rounded-lg text-xs transition ${
+                      restDurationMin === min
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                    }`}
+                  >
+                    {min}分钟
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 休息状态显示 */}
+          {isResting && (
+            <div className="mb-6 p-6 rounded-2xl border-2 border-cyan-500/50 bg-gradient-to-r from-cyan-900/30 to-teal-900/30 animate-pulse">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">🧘</span>
+                  <div>
+                    <div className="text-sm text-cyan-300">休息中...</div>
+                    <div className="text-xs text-slate-400">放松一下，准备下一个任务</div>
+                  </div>
+                </div>
+                <div className={`text-4xl font-mono font-bold tabular-nums ${
+                  restPaused ? 'text-slate-400' : 'text-cyan-300'
+                }`}>
+                  {formatTime(restRemaining)}
+                </div>
+              </div>
+              {/* 休息进度条 */}
+              <div className="h-2 bg-slate-900 rounded-full overflow-hidden mb-3">
+                <div
+                  className={`h-full transition-all duration-1000 ${
+                    restPaused ? 'bg-slate-500' : 'bg-gradient-to-r from-cyan-500 to-teal-500'
+                  }`}
+                  style={{
+                    width: `${((restDurationMin * 60 - restRemaining) / (restDurationMin * 60)) * 100}%`
+                  }}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRestPaused(p => !p)}
+                  className={`flex-1 px-4 py-2 rounded-xl font-medium text-sm transition ${
+                    restPaused
+                      ? 'bg-cyan-500/30 hover:bg-cyan-500/40 text-cyan-200 border border-cyan-500/50'
+                      : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600'
+                  }`}
+                >
+                  {restPaused ? '▶ 继续休息' : '⏸ 暂停'}
+                </button>
+                <button
+                  onClick={skipRest}
+                  className="flex-1 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 rounded-xl text-purple-300 font-medium text-sm transition"
+                >
+                  ⏭ 跳过休息
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="mb-6 p-4 bg-black/30 rounded-2xl border border-purple-400/20">
             <div className="flex justify-between text-sm text-purple-200 mb-3">
               <span>🎯 今日任务进度</span>
@@ -556,6 +688,7 @@ export default function ShortTermPlan() {
           <div className="space-y-3 mb-8 max-h-[28rem] overflow-y-auto pr-2">
             {session.tasks.map((task, idx) => {
               const isCounting = countdownTaskId === task.id;
+              const isRestingDisabled = isResting && !task.sessionCompleted && !isCounting;
               const totalSec = task.durationMin * 60;
               const progressPct = isCounting
                 ? Math.round(((totalSec - remainingSec) / totalSec) * 100)
@@ -570,17 +703,22 @@ export default function ShortTermPlan() {
                       ? 'bg-green-500/10 border-2 border-green-500/40'
                       : isCounting
                       ? 'bg-purple-500/10 border-2 border-purple-500/60 shadow-lg shadow-purple-500/20'
+                      : isRestingDisabled
+                      ? 'bg-slate-800/30 border border-slate-700 opacity-50'
                       : 'bg-white/5 border border-white/10 hover:border-purple-400/40 cursor-pointer'
                   }`}
                 >
                   <div className="flex items-center gap-4">
                     <button
                       onClick={() => handleTaskClick(task)}
+                      disabled={isRestingDisabled}
                       className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition shrink-0 ${
                         task.sessionCompleted
                           ? 'bg-green-500 border-green-500 text-white'
                           : isCounting
                           ? 'bg-purple-500 border-purple-500 text-white animate-pulse'
+                          : isRestingDisabled
+                          ? 'border-slate-600 cursor-not-allowed'
                           : 'border-slate-500 hover:border-purple-400 cursor-pointer'
                       }`}
                     >
@@ -594,6 +732,8 @@ export default function ShortTermPlan() {
                               ? 'text-green-400 line-through'
                               : isCounting
                               ? 'text-white'
+                              : isRestingDisabled
+                              ? 'text-slate-500'
                               : 'text-white'
                           }`}
                         >
@@ -617,7 +757,9 @@ export default function ShortTermPlan() {
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-xs text-slate-400">
-                          {isCounting
+                          {isRestingDisabled
+                            ? '🧘 休息中...'
+                            : isCounting
                             ? countdownPaused
                               ? '⏸ 已暂停'
                               : '⏳ 专注中...'

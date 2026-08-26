@@ -41,52 +41,103 @@ export default function DailyPlan() {
   const [showExitModal, setShowExitModal] = useState(false);
   const [exitReason, setExitReason] = useState('');
   const [elapsed, setElapsed] = useState(0);
-  const [remaining, setRemaining] = useState(0);
+  const [activeTaskId, setActiveTaskId] = useState(null);
+  const [taskRemaining, setTaskRemaining] = useState(0);
+  const [taskPaused, setTaskPaused] = useState(false);
 
   const dailyPlan = getDailyPlan(today);
   const progress = getDayProgress(today);
   const todayRecord = getDayStatus(today);
 
-  // 计算任务总时长（秒）
-  const totalDurationSec = useMemo(() => {
-    if (!session || !session.tasks) return 0;
-    return session.tasks.reduce((s, t) => s + (Number(t.durationMin) || 0) * 60, 0);
-  }, [session?.id, session?.tasks]);
-
-  // 专注倒计时
+  // 专注会话计时器（仅记录总用时）
   useEffect(() => {
-    if (session && session.status === 'running' && totalDurationSec > 0) {
-      const startElapsed = Math.floor((Date.now() - session.startedAt) / 1000);
-      setElapsed(startElapsed);
-      setRemaining(Math.max(0, totalDurationSec - startElapsed));
+    if (session && session.status === 'running') {
+      const ts = session.startedAt;
+      setElapsed(Math.floor((Date.now() - ts) / 1000));
       const timer = setInterval(() => {
-        const e = Math.floor((Date.now() - session.startedAt) / 1000);
-        setElapsed(e);
-        setRemaining(Math.max(0, totalDurationSec - e));
+        setElapsed(Math.floor((Date.now() - ts) / 1000));
       }, 1000);
       return () => clearInterval(timer);
     } else {
       setElapsed(0);
-      setRemaining(0);
     }
-  }, [session?.id, session?.status, totalDurationSec]);
+  }, [session?.id, session?.status]);
 
-  // 倒计时结束自动完成
+  // 任务独立倒计时
   useEffect(() => {
-    if (session && session.status === 'running' && remaining === 0 && totalDurationSec > 0 && elapsed > 0) {
-      const allDone = session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
-      if (!allDone) {
-        session.tasks.forEach(t => {
-          if (!t.sessionCompleted) toggleSessionTask(t.id);
-        });
-        setTimeout(() => {
-          playNotification('all', settings);
-          session.tasks.forEach(t => toggleTask(today, t.id));
-          completeSession();
-        }, 500);
-      }
+    if (!activeTaskId || taskPaused) return;
+    const timer = setInterval(() => {
+      setTaskRemaining(prev => {
+        if (prev <= 1) {
+          // 倒计时结束，自动标记完成
+          handleTaskComplete(activeTaskId);
+          setActiveTaskId(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [activeTaskId, taskPaused]);
+
+  // 会话结束时清除任务倒计时
+  useEffect(() => {
+    if (!session || session.status !== 'running') {
+      setActiveTaskId(null);
+      setTaskRemaining(0);
+      setTaskPaused(false);
     }
-  }, [remaining]);
+  }, [session?.id, session?.status]);
+
+  // 任务倒计时结束处理
+  const handleTaskComplete = (taskId) => {
+    if (!session) return;
+    const task = session.tasks.find(t => t.id === taskId);
+    if (!task || task.sessionCompleted) return;
+    
+    toggleSessionTask(taskId);
+    playNotification('task', settings);
+    
+    // 同步到每日计划
+    toggleTask(today, taskId);
+    
+    // 检查是否全部完成
+    const willAllDone = session.tasks.every(t => 
+      t.id === taskId ? true : t.sessionCompleted
+    );
+    if (willAllDone) {
+      setTimeout(() => {
+        playNotification('all', settings);
+      }, 300);
+    }
+  };
+
+  // 点击任务：开始/暂停/继续倒计时
+  const handleTaskTimerClick = (task) => {
+    if (task.sessionCompleted) {
+      // 已完成 → 取消完成
+      toggleSessionTask(task.id);
+      return;
+    }
+    if (activeTaskId === task.id) {
+      // 正在倒计时 → 暂停/继续
+      setTaskPaused(p => !p);
+      return;
+    }
+    // 切换到新任务
+    setActiveTaskId(task.id);
+    setTaskRemaining(task.durationMin * 60);
+    setTaskPaused(false);
+  };
+
+  // 提前完成当前任务
+  const handleFinishCurrentTask = () => {
+    if (!activeTaskId) return;
+    handleTaskComplete(activeTaskId);
+    setActiveTaskId(null);
+    setTaskRemaining(0);
+    setTaskPaused(false);
+  };
 
   // 更新今日日历状态
   useEffect(() => {
@@ -199,104 +250,189 @@ export default function DailyPlan() {
 
   // === 专注中界面 ===
   if (session && session.status === 'running') {
-    const totalMin = Math.round(totalDurationSec / 60);
-    const remainingMin = Math.ceil(remaining / 60);
-    const progressPct = totalDurationSec > 0 ? ((totalDurationSec - remaining) / totalDurationSec) * 100 : 0;
-    const isUrgent = remaining <= 60 && remaining > 0;
+    const completedCount = session.tasks.filter(t => t.sessionCompleted).length;
+    const totalTasks = session.tasks.length;
+    const progressPct = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
+    const activeTask = activeTaskId ? session.tasks.find(t => t.id === activeTaskId) : null;
+    const isTaskUrgent = activeTask && taskRemaining <= 60 && taskRemaining > 0;
+    
     return (
       <div className="p-6 max-w-4xl mx-auto">
-        <div className={`rounded-3xl p-8 border shadow-2xl transition-all ${
-          isUrgent
-            ? 'bg-gradient-to-br from-red-950 via-red-900 to-slate-900 border-red-500/50 animate-pulse'
-            : 'bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border-indigo-500/30'
-        }`}>
+        <div className="rounded-3xl p-8 border shadow-2xl transition-all bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border-indigo-500/30">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <span className={`w-3 h-3 rounded-full ${isUrgent ? 'bg-red-500' : 'bg-red-500 animate-pulse'}`} />
-              专注倒计时
+              <span className="w-3 h-3 rounded-full bg-indigo-500 animate-pulse" />
+              专注进行中
             </h2>
-            <div className={`text-4xl font-mono font-bold tabular-nums ${
-              isUrgent ? 'text-red-400' : 'text-indigo-300'
-            }`}>
-              {formatTime(remaining)}
+            <div className="text-sm text-indigo-300 font-mono">
+              总用时 {formatTime(elapsed)}
             </div>
           </div>
 
-          {/* 倒计时进度条 */}
-          <div className="mb-6">
-            <div className="flex justify-between text-sm text-indigo-200 mb-2">
-              <span>⏱️ 已用时 {formatTime(elapsed)}</span>
-              <span className="font-mono">剩余 {remainingMin} 分 / 共 {totalMin} 分</span>
-            </div>
-            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all duration-1000 ${
-                  isUrgent
-                    ? 'bg-gradient-to-r from-red-500 to-orange-500'
-                    : 'bg-gradient-to-r from-indigo-500 to-purple-500'
-                }`}
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-          </div>
-
+          {/* 完成进度 */}
           <div className="mb-6 p-4 bg-black/30 rounded-2xl border border-indigo-400/20">
             <div className="flex justify-between text-sm text-indigo-200 mb-3">
-              <span>🎯 完成进度</span>
+              <span>🎯 整体进度</span>
               <span>
-                {session.tasks.filter(t => t.sessionCompleted).length} / {session.tasks.length}
+                {completedCount} / {totalTasks} 个任务
               </span>
             </div>
             <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all"
-                style={{
-                  width: `${
-                    session.tasks.length === 0
-                      ? 0
-                      : (session.tasks.filter(t => t.sessionCompleted).length / session.tasks.length) * 100
-                  }%`,
-                }}
+                style={{ width: `${progressPct}%` }}
               />
             </div>
           </div>
 
-          <div className="space-y-3 mb-8 max-h-96 overflow-y-auto pr-2">
-            {session.tasks.map((task, idx) => (
-              <div
-                key={task.id}
-                className={`flex items-center gap-4 p-4 rounded-2xl transition-all ${
-                  task.sessionCompleted
-                    ? 'bg-green-500/10 border-2 border-green-500/40'
-                    : 'bg-white/5 border border-white/10 hover:border-indigo-400/40'
-                }`}
-              >
-                <button
-                  onClick={() => handleToggleTask(task.id)}
-                  className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition shrink-0 ${
-                    task.sessionCompleted
-                      ? 'bg-green-500 border-green-500 text-white'
-                      : 'border-slate-500 hover:border-indigo-400'
-                  }`}
-                >
-                  {task.sessionCompleted && '✓'}
-                </button>
-                <div className="flex-1">
-                  <div
-                    className={`font-medium ${
-                      task.sessionCompleted
-                        ? 'text-green-400 line-through decoration-green-500/50'
-                        : 'text-white'
-                    }`}
-                  >
-                    {idx + 1}. {task.title}
-                  </div>
-                  <div className="text-xs text-slate-400 mt-1">
-                    预计 {task.durationMin} 分钟
+          {/* 当前任务倒计时显示区 */}
+          {activeTask && (
+            <div className={`mb-6 p-6 rounded-2xl border-2 transition-all ${
+              taskPaused
+                ? 'bg-slate-800/50 border-slate-500'
+                : isTaskUrgent
+                ? 'bg-red-500/20 border-red-500 animate-pulse'
+                : 'bg-indigo-500/15 border-indigo-500/60'
+            }`}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">
+                    {taskPaused ? '⏸' : isTaskUrgent ? '🔴' : '⏳'}
+                  </span>
+                  <div>
+                    <div className="text-xs text-slate-400">
+                      {taskPaused ? '已暂停' : isTaskUrgent ? '即将结束！' : '专注中'}
+                    </div>
+                    <div className="text-base font-medium text-white">
+                      {activeTask.title}
+                    </div>
                   </div>
                 </div>
+                <div className={`text-5xl font-mono font-bold tabular-nums ${
+                  taskPaused ? 'text-slate-400' : isTaskUrgent ? 'text-red-400' : 'text-indigo-300'
+                }`}>
+                  {formatTime(taskRemaining)}
+                </div>
               </div>
-            ))}
+              {/* 任务进度条 */}
+              {(() => {
+                const totalSec = activeTask.durationMin * 60;
+                const pct = ((totalSec - taskRemaining) / totalSec) * 100;
+                return (
+                  <div className="h-2 bg-slate-900 rounded-full overflow-hidden mb-3">
+                    <div
+                      className={`h-full transition-all duration-1000 ${
+                        taskPaused
+                          ? 'bg-slate-500'
+                          : isTaskUrgent
+                          ? 'bg-gradient-to-r from-red-500 to-orange-500'
+                          : 'bg-gradient-to-r from-indigo-500 to-purple-500'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                );
+              })()}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTaskPaused(p => !p)}
+                  className={`flex-1 px-4 py-2 rounded-xl font-medium text-sm transition ${
+                    taskPaused
+                      ? 'bg-indigo-500/30 hover:bg-indigo-500/40 text-indigo-200 border border-indigo-500/50'
+                      : 'bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600'
+                  }`}
+                >
+                  {taskPaused ? '▶ 继续专注' : '⏸ 暂停'}
+                </button>
+                <button
+                  onClick={handleFinishCurrentTask}
+                  className="flex-1 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/40 rounded-xl text-green-300 font-medium text-sm transition"
+                >
+                  ✓ 提前完成
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 任务列表（可点击启动倒计时） */}
+          <div className="space-y-3 mb-8 max-h-96 overflow-y-auto pr-2">
+            {session.tasks.map((task, idx) => {
+              const isActive = activeTaskId === task.id;
+              const totalSec = task.durationMin * 60;
+              const pct = isActive ? ((totalSec - taskRemaining) / totalSec) * 100 : 0;
+              
+              return (
+                <div
+                  key={task.id}
+                  className={`p-4 rounded-2xl transition-all cursor-pointer ${
+                    task.sessionCompleted
+                      ? 'bg-green-500/10 border-2 border-green-500/40'
+                      : isActive
+                      ? 'bg-indigo-500/20 border-2 border-indigo-500/60'
+                      : 'bg-white/5 border border-white/10 hover:border-indigo-400/40'
+                  }`}
+                  onClick={() => handleTaskTimerClick(task)}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center transition shrink-0 ${
+                      task.sessionCompleted
+                        ? 'bg-green-500 border-green-500 text-white'
+                        : isActive
+                        ? 'bg-indigo-500 border-indigo-500 text-white'
+                        : 'border-slate-500'
+                    }`}>
+                      {task.sessionCompleted ? '✓' : isActive ? '⏱' : ''}
+                    </div>
+                    <div className="flex-1">
+                      <div className={`font-medium ${
+                        task.sessionCompleted
+                          ? 'text-green-400 line-through decoration-green-500/50'
+                          : isActive
+                          ? 'text-indigo-300'
+                          : 'text-white'
+                      }`}>
+                        {idx + 1}. {task.title}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1 flex items-center gap-3">
+                        <span>{task.sessionCompleted ? '✅ 已完成' : isActive ? `⏳ 倒计时中 ${formatTime(taskRemaining)}` : `预计 ${task.durationMin} 分钟`}</span>
+                      </div>
+                    </div>
+                    {!task.sessionCompleted && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isActive) {
+                            setTaskPaused(p => !p);
+                          } else {
+                            setActiveTaskId(task.id);
+                            setTaskRemaining(task.durationMin * 60);
+                            setTaskPaused(false);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                          isActive
+                            ? taskPaused
+                              ? 'bg-green-600 hover:bg-green-500 text-white'
+                              : 'bg-orange-600 hover:bg-orange-500 text-white'
+                            : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                        }`}
+                      >
+                        {isActive ? (taskPaused ? '▶' : '⏸') : '▶ 开始'}
+                      </button>
+                    )}
+                  </div>
+                  {/* 活动任务进度条 */}
+                  {isActive && !task.sessionCompleted && (
+                    <div className="mt-3 h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-1000"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="space-y-3">
