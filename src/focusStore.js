@@ -166,6 +166,24 @@ export const useDailyPlans = () => {
     });
   };
 
+  const setTaskCompleted = (dateStr, taskId, completed) => {
+    setPlans(prev => {
+      const day = prev[dateStr];
+      if (!day) return prev;
+      return {
+        ...prev,
+        [dateStr]: {
+          ...day,
+          tasks: day.tasks.map(t =>
+            t.id === taskId
+              ? { ...t, completed, completedAt: completed ? Date.now() : null }
+              : t
+          ),
+        },
+      };
+    });
+  };
+
   const updateTask = (dateStr, taskId, patch) => {
     setPlans(prev => {
       const day = prev[dateStr];
@@ -227,6 +245,7 @@ export const useDailyPlans = () => {
     createDailyPlan,
     getDailyPlan,
     toggleTask,
+    setTaskCompleted,
     updateTask,
     addTask,
     removeTask,
@@ -496,7 +515,7 @@ export const useActiveSession = () => {
       planId,
       dateStr,
       startedAt: Date.now(),
-      tasks: tasks.map(t => ({ ...t, sessionCompleted: false })),
+      tasks: tasks.map(t => ({ ...t, sessionCompleted: !!t.completed })),
       status: 'running', // running | paused | completed | exited | emergency
     };
     setSession(s);

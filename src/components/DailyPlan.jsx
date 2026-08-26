@@ -23,6 +23,7 @@ export default function DailyPlan() {
     addTask,
     removeTask,
     toggleTask,
+    setTaskCompleted,
     isDayCompleted,
     getDayProgress,
   } = useDailyPlans();
@@ -98,8 +99,8 @@ export default function DailyPlan() {
     toggleSessionTask(taskId);
     playNotification('task', settings);
     
-    // 同步到每日计划
-    toggleTask(today, taskId);
+    // 同步到每日计划（设为完成）
+    setTaskCompleted(today, taskId, true);
     
     // 检查是否全部完成
     const willAllDone = session.tasks.every(t => 
@@ -117,6 +118,7 @@ export default function DailyPlan() {
     if (task.sessionCompleted) {
       // 已完成 → 取消完成
       toggleSessionTask(task.id);
+      setTaskCompleted(today, task.id, false);
       return;
     }
     if (activeTaskId === task.id) {
@@ -206,11 +208,9 @@ export default function DailyPlan() {
       if (allDone) {
         playNotification('all', settings);
       }
-      // 同步会话中完成的任务到每日计划
+      // 同步会话中所有任务的完成状态到每日计划
       session.tasks.forEach(t => {
-        if (t.sessionCompleted) {
-          toggleTask(today, t.id);
-        }
+        setTaskCompleted(today, t.id, t.sessionCompleted);
       });
     }
     completeSession();
