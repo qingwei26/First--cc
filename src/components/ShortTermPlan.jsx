@@ -95,6 +95,15 @@ export default function ShortTermPlan() {
   // 专注会话倒计时
   useEffect(() => {
     if (session && session.status === 'running' && sessionTotalSec > 0) {
+      // 检查是否所有任务已完成
+      const allDone = session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
+      if (allDone) {
+        // 所有任务完成，冻结倒计时
+        const frozenElapsed = Math.floor((Date.now() - session.startedAt) / 1000);
+        setElapsed(frozenElapsed);
+        setSessionRemaining(Math.max(0, sessionTotalSec - frozenElapsed));
+        return;
+      }
       const startElapsed = Math.floor((Date.now() - session.startedAt) / 1000);
       setElapsed(startElapsed);
       setSessionRemaining(Math.max(0, sessionTotalSec - startElapsed));
@@ -108,7 +117,10 @@ export default function ShortTermPlan() {
       setElapsed(0);
       setSessionRemaining(0);
     }
-  }, [session?.id, session?.status, sessionTotalSec]);
+  }, [session?.id, session?.status, sessionTotalSec, session?.tasks?.some(t => t.sessionCompleted)]);
+
+  // 计算是否所有任务已完成
+  const allTasksDone = session && session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
 
   // 会话倒计时结束自动完成所有任务
   useEffect(() => {
@@ -459,22 +471,29 @@ export default function ShortTermPlan() {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <div className={`rounded-3xl p-8 border shadow-2xl transition-all ${
-          isUrgent
+          allTasksDone
+            ? 'bg-gradient-to-br from-green-900 via-slate-900 to-emerald-900 border-green-500/50'
+            : isUrgent
             ? 'bg-gradient-to-br from-red-950 via-purple-950 to-slate-900 border-red-500/50 animate-pulse'
             : 'bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 border-purple-500/30'
         }`}>
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
             <div>
               <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                <span className={`w-3 h-3 rounded-full ${isUrgent ? 'bg-red-500' : 'bg-red-500 animate-pulse'}`} />
-                {plan?.title}
+                <span className={`w-3 h-3 rounded-full ${
+                  allTasksDone ? 'bg-green-500' : isUrgent ? 'bg-red-500' : 'bg-red-500 animate-pulse'
+                }`} />
+                {allTasksDone ? '🎉 提前完成！' : plan?.title}
               </h2>
-              <p className="text-indigo-300 text-sm mt-1">
-                🏆 {typeInfo.label} · 第 {dayInfo?.dayIndex} / {plan?.days.length} 天 · {session.dateStr}
+              <p className={`text-sm mt-1 ${allTasksDone ? 'text-green-300' : 'text-indigo-300'}`}>
+                {allTasksDone
+                  ? `还可以利用 ${formatTime(sessionRemaining)} 时间 · 可安排更多任务或提前结束`
+                  : `🏆 ${typeInfo.label} · 第 ${dayInfo?.dayIndex} / ${plan?.days.length} 天 · ${session.dateStr}`
+                }
               </p>
             </div>
             <div className={`text-4xl font-mono font-bold tabular-nums ${
-              isUrgent ? 'text-red-400' : 'text-purple-300'
+              allTasksDone ? 'text-green-400' : isUrgent ? 'text-red-400' : 'text-purple-300'
             }`}>
               {formatTime(sessionRemaining)}
             </div>
@@ -482,14 +501,20 @@ export default function ShortTermPlan() {
 
           {/* 会话倒计时进度条 */}
           <div className="mb-6">
-            <div className="flex justify-between text-sm text-purple-200 mb-2">
-              <span>⏱️ 已用时 {formatTime(elapsed)}</span>
-              <span className="font-mono">剩余 {remainingMin} 分 / 共 {totalMin} 分</span>
+            <div className="flex justify-between text-sm mb-2">
+              <span className={allTasksDone ? 'text-green-200' : 'text-purple-200'}>
+                ⏱️ 已用时 {formatTime(elapsed)}
+              </span>
+              <span className={`font-mono ${allTasksDone ? 'text-green-200' : 'text-purple-200'}`}>
+                {allTasksDone ? '🎉 剩余' : '剩余'} {remainingMin} 分 / 共 {totalMin} 分
+              </span>
             </div>
             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-1000 ${
-                  isUrgent
+                  allTasksDone
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                    : isUrgent
                     ? 'bg-gradient-to-r from-red-500 to-orange-500'
                     : 'bg-gradient-to-r from-purple-500 to-pink-500'
                 }`}
@@ -791,11 +816,24 @@ export default function ShortTermPlan() {
           </div>
 
           <div className="space-y-3">
+            {allTasksDone && sessionRemaining > 0 && (
+              <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-2xl text-center">
+                <div className="text-green-400 font-bold text-lg">🎉 全部完成！</div>
+                <div className="text-sm text-slate-300 mt-1">
+                  提前完成 <span className="font-mono text-green-400">{formatTime(sessionRemaining)}</span> ·
+                  可用时间规划更多任务
+                </div>
+              </div>
+            )}
             <button
               onClick={handleCompleteSession}
-              className="w-full p-5 bg-gradient-to-r from-purple-600 to-pink-600 hover:brightness-110 rounded-2xl text-white font-bold text-lg shadow-lg shadow-purple-500/30 transition"
+              className={`w-full p-5 rounded-2xl text-white font-bold text-lg shadow-lg transition ${
+                allTasksDone
+                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:brightness-110'
+                  : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:brightness-110'
+              }`}
             >
-              ✅ 完成今日打卡，点亮拼图
+              {allTasksDone ? '✅ 结束会话，点亮拼图' : '✅ 完成今日打卡，点亮拼图'}
             </button>
             <div className="flex gap-2 justify-end">
               <button
