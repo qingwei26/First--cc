@@ -92,12 +92,16 @@ export default function ShortTermPlan() {
     return session.tasks.reduce((s, t) => s + (Number(t.durationMin) || 0) * 60, 0);
   }, [session?.id, session?.tasks]);
 
+  // 计算是否所有任务已完成
+  const allTasksDone = useMemo(() => {
+    if (!session || !session.tasks) return false;
+    return session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
+  }, [session?.tasks]);
+
   // 专注会话倒计时
   useEffect(() => {
     if (session && session.status === 'running' && sessionTotalSec > 0) {
-      // 检查是否所有任务已完成
-      const allDone = session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
-      if (allDone) {
+      if (allTasksDone) {
         // 所有任务完成，冻结倒计时
         const frozenElapsed = Math.floor((Date.now() - session.startedAt) / 1000);
         setElapsed(frozenElapsed);
@@ -117,10 +121,7 @@ export default function ShortTermPlan() {
       setElapsed(0);
       setSessionRemaining(0);
     }
-  }, [session?.id, session?.status, sessionTotalSec, session?.tasks?.some(t => t.sessionCompleted)]);
-
-  // 计算是否所有任务已完成
-  const allTasksDone = session && session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
+  }, [session?.id, session?.status, sessionTotalSec, allTasksDone]);
 
   // 会话倒计时结束自动完成所有任务
   useEffect(() => {
@@ -412,8 +413,10 @@ export default function ShortTermPlan() {
       if (plan) {
         const dayIdx = plan.days.findIndex(d => d.date === session.dateStr);
         if (dayIdx >= 0) {
+          // 计算剩余时间（秒）
+          const remainingTime = allDone ? sessionRemaining : null;
           session.tasks.forEach(t => {
-            markDayTask(session.planId, plan.days[dayIdx].dayIndex, t.id, t.sessionCompleted);
+            markDayTask(session.planId, plan.days[dayIdx].dayIndex, t.id, t.sessionCompleted, remainingTime);
           });
           // 日历同步
           const dayRec = plan.days[dayIdx];
@@ -1225,8 +1228,13 @@ export default function ShortTermPlan() {
                           )}
                         </div>
                         {day.completedAt && (
-                          <div className="text-xs text-slate-500">
-                            完成于 {new Date(day.completedAt).toLocaleString('zh-CN')}
+                          <div className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
+                            <span>完成于 {new Date(day.completedAt).toLocaleString('zh-CN')}</span>
+                            {day.remainingTime != null && day.remainingTime > 0 && (
+                              <span className="text-green-400 font-medium">
+                                ⚡ 剩余 {Math.floor(day.remainingTime / 60)}分{day.remainingTime % 60}秒
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

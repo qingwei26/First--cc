@@ -340,7 +340,7 @@ export const useShortTermPlans = () => {
     );
   };
 
-  const markDayTask = (planId, dayIndex, taskId, completed) => {
+  const markDayTask = (planId, dayIndex, taskId, completed, remainingTime = null) => {
     setShortPlans(prev =>
       prev.map(p => {
         if (p.id !== planId) return p;
@@ -357,6 +357,7 @@ export const useShortTermPlans = () => {
               tasks: newTasks,
               completed: allTasksDone,
               completedAt: allTasksDone ? Date.now() : d.completedAt,
+              remainingTime: allTasksDone && remainingTime !== null ? remainingTime : d.remainingTime,
             };
           }),
         };
