@@ -6,10 +6,12 @@ import ShortTermPlan from './components/ShortTermPlan';
 import SettingsPage from './components/SettingsPage';
 import DevTestPanel from './components/DevTestPanel';
 import StatsPage from './components/StatsPage';
+import TimerPage from './components/TimerPage';
 import { useActiveSession, useCalendar, useDailyPlans, useShortTermPlans, useSettings, getTodayStr } from './focusStore';
 
 const NAV_ITEMS = [
   { key: 'daily', label: '每日计划', emoji: '📋', color: 'from-indigo-500 to-blue-500' },
+  { key: 'timer', label: '计时器', emoji: '⏱️', color: 'from-cyan-500 to-teal-500' },
   { key: 'calendar', label: '日历打卡', emoji: '📅', color: 'from-yellow-500 to-orange-500' },
   { key: 'short', label: '短期挑战', emoji: '🏅', color: 'from-purple-500 to-pink-500' },
   { key: 'stats', label: '数据统计', emoji: '📊', color: 'from-emerald-500 to-teal-500' },
@@ -47,6 +49,8 @@ export default function App() {
       return <ShortTermPlan />;
     }
     switch (activeTab) {
+      case 'timer':
+        return <TimerPage />;
       case 'calendar':
         return <CalendarView />;
       case 'short':

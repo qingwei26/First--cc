@@ -55,6 +55,7 @@ export default function ShortTermPlan() {
   const [showExitModal, setShowExitModal] = useState(false);
   const [exitReason, setExitReason] = useState('');
   const [elapsed, setElapsed] = useState(0);
+  const [sessionRemaining, setSessionRemaining] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [countdownTaskId, setCountdownTaskId] = useState(null);
   const [remainingSec, setRemainingSec] = useState(0);
@@ -78,19 +79,44 @@ export default function ShortTermPlan() {
     }
   }, [form.type, form.scheduleMode]);
 
-  // 专注会话计时器
+  // 计算会话任务总时长（秒）
+  const sessionTotalSec = useMemo(() => {
+    if (!session || !session.tasks) return 0;
+    return session.tasks.reduce((s, t) => s + (Number(t.durationMin) || 0) * 60, 0);
+  }, [session?.id, session?.tasks]);
+
+  // 专注会话倒计时
   useEffect(() => {
-    if (session && session.status === 'running') {
-      const ts = session.startedAt;
-      setElapsed(Math.floor((Date.now() - ts) / 1000));
+    if (session && session.status === 'running' && sessionTotalSec > 0) {
+      const startElapsed = Math.floor((Date.now() - session.startedAt) / 1000);
+      setElapsed(startElapsed);
+      setSessionRemaining(Math.max(0, sessionTotalSec - startElapsed));
       const timer = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - ts) / 1000));
+        const e = Math.floor((Date.now() - session.startedAt) / 1000);
+        setElapsed(e);
+        setSessionRemaining(Math.max(0, sessionTotalSec - e));
       }, 1000);
       return () => clearInterval(timer);
     } else {
       setElapsed(0);
+      setSessionRemaining(0);
     }
-  }, [session?.id, session?.status]);
+  }, [session?.id, session?.status, sessionTotalSec]);
+
+  // 会话倒计时结束自动完成所有任务
+  useEffect(() => {
+    if (session && session.status === 'running' && sessionRemaining === 0 && sessionTotalSec > 0 && elapsed > 0) {
+      const allDone = session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
+      if (!allDone) {
+        session.tasks.forEach(t => {
+          if (!t.sessionCompleted) toggleSessionTask(t.id);
+        });
+        setTimeout(() => {
+          playNotification('all', settings);
+        }, 300);
+      }
+    }
+  }, [sessionRemaining]);
 
   // 任务倒计时
   useEffect(() => {
@@ -376,22 +402,50 @@ export default function ShortTermPlan() {
     const dayIdx = plan?.days.findIndex(d => d.date === session.dateStr) ?? -1;
     const dayInfo = plan?.days[dayIdx];
     const typeInfo = SHORT_TERM_TYPES[plan?.type] || SHORT_TERM_TYPES[7];
+    const totalMin = Math.round(sessionTotalSec / 60);
+    const remainingMin = Math.ceil(sessionRemaining / 60);
+    const progressPct = sessionTotalSec > 0 ? ((sessionTotalSec - sessionRemaining) / sessionTotalSec) * 100 : 0;
+    const isUrgent = sessionRemaining <= 60 && sessionRemaining > 0;
 
     return (
       <div className="p-6 max-w-4xl mx-auto">
-        <div className="bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 rounded-3xl p-8 border border-purple-500/30 shadow-2xl">
+        <div className={`rounded-3xl p-8 border shadow-2xl transition-all ${
+          isUrgent
+            ? 'bg-gradient-to-br from-red-950 via-purple-950 to-slate-900 border-red-500/50 animate-pulse'
+            : 'bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 border-purple-500/30'
+        }`}>
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
             <div>
               <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                <span className={`w-3 h-3 rounded-full ${isUrgent ? 'bg-red-500' : 'bg-red-500 animate-pulse'}`} />
                 {plan?.title}
               </h2>
               <p className="text-indigo-300 text-sm mt-1">
                 🏆 {typeInfo.label} · 第 {dayInfo?.dayIndex} / {plan?.days.length} 天 · {session.dateStr}
               </p>
             </div>
-            <div className="text-3xl font-mono font-bold text-purple-300 tabular-nums">
-              {formatTime(elapsed)}
+            <div className={`text-4xl font-mono font-bold tabular-nums ${
+              isUrgent ? 'text-red-400' : 'text-purple-300'
+            }`}>
+              {formatTime(sessionRemaining)}
+            </div>
+          </div>
+
+          {/* 会话倒计时进度条 */}
+          <div className="mb-6">
+            <div className="flex justify-between text-sm text-purple-200 mb-2">
+              <span>⏱️ 已用时 {formatTime(elapsed)}</span>
+              <span className="font-mono">剩余 {remainingMin} 分 / 共 {totalMin} 分</span>
+            </div>
+            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-1000 ${
+                  isUrgent
+                    ? 'bg-gradient-to-r from-red-500 to-orange-500'
+                    : 'bg-gradient-to-r from-purple-500 to-pink-500'
+                }`}
+                style={{ width: `${progressPct}%` }}
+              />
             </div>
           </div>
 

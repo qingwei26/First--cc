@@ -41,27 +41,52 @@ export default function DailyPlan() {
   const [showExitModal, setShowExitModal] = useState(false);
   const [exitReason, setExitReason] = useState('');
   const [elapsed, setElapsed] = useState(0);
-  const [sessionStartTs, setSessionStartTs] = useState(null);
+  const [remaining, setRemaining] = useState(0);
 
   const dailyPlan = getDailyPlan(today);
   const progress = getDayProgress(today);
   const todayRecord = getDayStatus(today);
 
-  // 专注计时器
+  // 计算任务总时长（秒）
+  const totalDurationSec = useMemo(() => {
+    if (!session || !session.tasks) return 0;
+    return session.tasks.reduce((s, t) => s + (Number(t.durationMin) || 0) * 60, 0);
+  }, [session?.id, session?.tasks]);
+
+  // 专注倒计时
   useEffect(() => {
-    if (session && session.status === 'running') {
-      const ts = session.startedAt;
-      setSessionStartTs(ts);
-      setElapsed(Math.floor((Date.now() - ts) / 1000));
+    if (session && session.status === 'running' && totalDurationSec > 0) {
+      const startElapsed = Math.floor((Date.now() - session.startedAt) / 1000);
+      setElapsed(startElapsed);
+      setRemaining(Math.max(0, totalDurationSec - startElapsed));
       const timer = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - ts) / 1000));
+        const e = Math.floor((Date.now() - session.startedAt) / 1000);
+        setElapsed(e);
+        setRemaining(Math.max(0, totalDurationSec - e));
       }, 1000);
       return () => clearInterval(timer);
     } else {
-      setSessionStartTs(null);
       setElapsed(0);
+      setRemaining(0);
     }
-  }, [session?.id, session?.status]);
+  }, [session?.id, session?.status, totalDurationSec]);
+
+  // 倒计时结束自动完成
+  useEffect(() => {
+    if (session && session.status === 'running' && remaining === 0 && totalDurationSec > 0 && elapsed > 0) {
+      const allDone = session.tasks.length > 0 && session.tasks.every(t => t.sessionCompleted);
+      if (!allDone) {
+        session.tasks.forEach(t => {
+          if (!t.sessionCompleted) toggleSessionTask(t.id);
+        });
+        setTimeout(() => {
+          playNotification('all', settings);
+          session.tasks.forEach(t => toggleTask(today, t.id));
+          completeSession();
+        }, 500);
+      }
+    }
+  }, [remaining]);
 
   // 更新今日日历状态
   useEffect(() => {
@@ -174,16 +199,44 @@ export default function DailyPlan() {
 
   // === 专注中界面 ===
   if (session && session.status === 'running') {
+    const totalMin = Math.round(totalDurationSec / 60);
+    const remainingMin = Math.ceil(remaining / 60);
+    const progressPct = totalDurationSec > 0 ? ((totalDurationSec - remaining) / totalDurationSec) * 100 : 0;
+    const isUrgent = remaining <= 60 && remaining > 0;
     return (
       <div className="p-6 max-w-4xl mx-auto">
-        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-8 border border-indigo-500/30 shadow-2xl">
-          <div className="flex items-center justify-between mb-6">
+        <div className={`rounded-3xl p-8 border shadow-2xl transition-all ${
+          isUrgent
+            ? 'bg-gradient-to-br from-red-950 via-red-900 to-slate-900 border-red-500/50 animate-pulse'
+            : 'bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border-indigo-500/30'
+        }`}>
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-              专注进行中
+              <span className={`w-3 h-3 rounded-full ${isUrgent ? 'bg-red-500' : 'bg-red-500 animate-pulse'}`} />
+              专注倒计时
             </h2>
-            <div className="text-3xl font-mono font-bold text-indigo-300 tabular-nums">
-              {formatTime(elapsed)}
+            <div className={`text-4xl font-mono font-bold tabular-nums ${
+              isUrgent ? 'text-red-400' : 'text-indigo-300'
+            }`}>
+              {formatTime(remaining)}
+            </div>
+          </div>
+
+          {/* 倒计时进度条 */}
+          <div className="mb-6">
+            <div className="flex justify-between text-sm text-indigo-200 mb-2">
+              <span>⏱️ 已用时 {formatTime(elapsed)}</span>
+              <span className="font-mono">剩余 {remainingMin} 分 / 共 {totalMin} 分</span>
+            </div>
+            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-1000 ${
+                  isUrgent
+                    ? 'bg-gradient-to-r from-red-500 to-orange-500'
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-500'
+                }`}
+                style={{ width: `${progressPct}%` }}
+              />
             </div>
           </div>
 
