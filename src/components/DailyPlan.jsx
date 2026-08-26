@@ -264,9 +264,6 @@ export default function DailyPlan() {
               <span className="w-3 h-3 rounded-full bg-indigo-500 animate-pulse" />
               专注进行中
             </h2>
-            <div className="text-sm text-indigo-300 font-mono">
-              总用时 {formatTime(elapsed)}
-            </div>
           </div>
 
           {/* 完成进度 */}
