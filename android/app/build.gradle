@@ -1,5 +1,48 @@
 apply plugin: 'com.android.application'
 
+// ===== Release 签名配置 =====
+// 优先顺序：local.properties → CI 环境变量（GitHub Secrets）
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localProperties.load(new FileInputStream(localPropertiesFile))
+}
+
+def signingEnabled = false
+def keystoreFile = null
+def storePassword = null
+def keyAlias = null
+def keyPassword = null
+
+// 从 local.properties 读取
+if (localProperties.getProperty('storeFile') && localProperties.getProperty('storePassword')) {
+    def path = localProperties.getProperty('storeFile')
+    // 如果是相对路径，相对于 android/ 目录
+    if (!new File(path).isAbsolute()) {
+        path = rootProject.file(path).absolutePath
+    }
+    keystoreFile = new File(path)
+    storePassword = localProperties.getProperty('storePassword')
+    keyAlias = localProperties.getProperty('keyAlias', 'focusself')
+    keyPassword = localProperties.getProperty('keyPassword', storePassword)
+    signingEnabled = keystoreFile.exists()
+}
+
+// 从 CI 环境变量覆盖（优先级更高）
+if (System.getenv('SIGNING_KEYSTORE_PATH')) {
+    keystoreFile = new File(System.getenv('SIGNING_KEYSTORE_PATH'))
+    storePassword = System.getenv('SIGNING_STORE_PASSWORD')
+    keyAlias = System.getenv('SIGNING_KEY_ALIAS')
+    keyPassword = System.getenv('SIGNING_KEY_PASSWORD')
+    signingEnabled = true
+}
+
+if (signingEnabled) {
+    println "🔐 Release signing enabled: ${keystoreFile.name} (alias: ${keyAlias})"
+} else {
+    println "⚠️  Release signing NOT configured — building unsigned APK"
+}
+
 android {
     namespace = "com.focusself.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +59,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (signingEnabled) {
+                storeFile keystoreFile
+                storePassword storePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingEnabled) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

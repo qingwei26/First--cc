@@ -44,34 +44,77 @@ jobs:
       - name: Sync to Android
         run: npx cap sync android
 
-      - name: Check environment
+      # ===== 签名密钥处理 =====
+      - name: Setup signing key
+        id: signing
         working-directory: android
         run: |
-          echo "=== Java version ==="
-          java -version
-          echo "=== Android SDK ==="
-          echo $ANDROID_HOME
-          ls $ANDROID_HOME/platforms/ 2>/dev/null || echo "No platforms found"
-          ls $ANDROID_HOME/build-tools/ 2>/dev/null || echo "No build-tools found"
-          echo "=== Gradle version ==="
-          chmod +x gradlew
-          ./gradlew --version
+          mkdir -p app/build/signing
+          
+          # 如果配置了 SIGNING_KEYSTORE secret，解码使用
+          if [ -n "${{ secrets.SIGNING_KEYSTORE }}" ]; then
+            echo "🔐 Using production signing key from secrets"
+            echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > app/build/signing/release-keystore.p12
+            echo "SIGNING_KEYSTORE_PATH=android/app/build/signing/release-keystore.p12" >> "$GITHUB_ENV"
+            echo "SIGNING_STORE_PASSWORD=${{ secrets.SIGNING_STORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_ALIAS=${{ secrets.SIGNING_KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_PASSWORD=${{ secrets.SIGNING_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "MODE=release" >> "$GITHUB_ENV"
+          else
+            echo "⚠️  No signing secrets — generating temporary debug keystore"
+            keytool -genkey -v \
+              -keystore app/build/signing/debug-keystore.jks \
+              -alias debug \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass debug123 -keypass debug123 \
+              -dname "CN=Debug, OU=Dev, O=FocusSelf, L=Beijing, ST=Beijing, C=CN"
+            echo "SIGNING_KEYSTORE_PATH=android/app/build/signing/debug-keystore.jks" >> "$GITHUB_ENV"
+            echo "SIGNING_STORE_PASSWORD=debug123" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_ALIAS=debug" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_PASSWORD=debug123" >> "$GITHUB_ENV"
+            echo "MODE=debug-signed" >> "$GITHUB_ENV"
+          fi
 
       - name: Build APK
         working-directory: android
         run: |
-          echo "=== Starting APK build ==="
+          echo "=== Building ${MODE} APK ==="
           chmod +x gradlew
-          ./gradlew assembleDebug
-          echo "=== Build finished ==="
-          echo "=== APK files ==="
-          find app/build -name "*.apk" 2>/dev/null || echo "No APK found"
-          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "Debug output dir not found"
+          ./gradlew assembleRelease
+          
+          echo "=== APK output ==="
+          find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: focus-self-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: focus-self-apk-${{ env.MODE }}
+          path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
+
+      # ===== 如果没有签名密钥，额外提供指引 =====
+      - name: Signing setup guide
+        if: env.MODE == 'debug-signed'
+        run: |
+          echo ""
+          echo "============================================"
+          echo "⚠️  Build used temporary debug signature"
+          echo "============================================"
+          echo ""
+          echo "To publish to app stores, configure production signing:"
+          echo ""
+          echo "1. On your local machine, run:"
+          echo "   keytool -genkey -v -keystore release-keystore.jks \\"
+          echo "     -alias focusself -keyalg RSA -keysize 2048 \\"
+          echo "     -validity 10000 -storepass YOUR_PASSWORD"
+          echo ""
+          echo "2. Convert to base64:"
+          echo "   base64 -w 0 release-keystore.jks > keystore-b64.txt"
+          echo ""
+          echo "3. Add GitHub Secrets (Repo → Settings → Secrets → Actions):"
+          echo "   - SIGNING_KEYSTORE: (paste base64 content)"
+          echo "   - SIGNING_STORE_PASSWORD: your keystore password"
+          echo "   - SIGNING_KEY_ALIAS: focusself"
+          echo "   - SIGNING_KEY_PASSWORD: your key password"
+          echo ""
