@@ -9,10 +9,10 @@ if (localPropertiesFile.exists()) {
 }
 
 def signingEnabled = false
-def keystoreFile = null
-def storePassword = null
-def keyAlias = null
-def keyPassword = null
+def ksFile = null
+def ksStorePass = null
+def ksAlias = null
+def ksKeyPass = null
 
 // 从 local.properties 读取
 if (localProperties.getProperty('storeFile') && localProperties.getProperty('storePassword')) {
@@ -21,24 +21,31 @@ if (localProperties.getProperty('storeFile') && localProperties.getProperty('sto
     if (!new File(path).isAbsolute()) {
         path = rootProject.file(path).absolutePath
     }
-    keystoreFile = new File(path)
-    storePassword = localProperties.getProperty('storePassword')
-    keyAlias = localProperties.getProperty('keyAlias', 'focusself')
-    keyPassword = localProperties.getProperty('keyPassword', storePassword)
-    signingEnabled = keystoreFile.exists()
+    def f = new File(path)
+    if (f.exists()) {
+        ksFile = f
+        ksStorePass = localProperties.getProperty('storePassword')
+        ksAlias = localProperties.getProperty('keyAlias', 'focusself')
+        ksKeyPass = localProperties.getProperty('keyPassword', ksStorePass)
+        signingEnabled = true
+    }
 }
 
 // 从 CI 环境变量覆盖（优先级更高）
-if (System.getenv('SIGNING_KEYSTORE_PATH')) {
-    keystoreFile = new File(System.getenv('SIGNING_KEYSTORE_PATH'))
-    storePassword = System.getenv('SIGNING_STORE_PASSWORD')
-    keyAlias = System.getenv('SIGNING_KEY_ALIAS')
-    keyPassword = System.getenv('SIGNING_KEY_PASSWORD')
-    signingEnabled = true
+def envKsPath = System.getenv('SIGNING_KEYSTORE_PATH')
+if (envKsPath) {
+    def f = new File(envKsPath)
+    if (f.exists()) {
+        ksFile = f
+        ksStorePass = System.getenv('SIGNING_STORE_PASSWORD')
+        ksAlias = System.getenv('SIGNING_KEY_ALIAS')
+        ksKeyPass = System.getenv('SIGNING_KEY_PASSWORD')
+        signingEnabled = true
+    }
 }
 
 if (signingEnabled) {
-    println "🔐 Release signing enabled: ${keystoreFile.name} (alias: ${keyAlias})"
+    println "🔐 Release signing enabled: ${ksFile.name} (alias: ${ksAlias})"
 } else {
     println "⚠️  Release signing NOT configured — building unsigned APK"
 }
@@ -61,11 +68,11 @@ android {
     }
     signingConfigs {
         release {
-            if (signingEnabled) {
-                storeFile keystoreFile
-                storePassword storePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+            if (signingEnabled && ksFile != null) {
+                storeFile ksFile
+                storePassword ksStorePass
+                keyAlias ksAlias
+                keyPassword ksKeyPass
             }
         }
     }

@@ -33,7 +33,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Install dependencies
         run: npm install
@@ -80,8 +80,18 @@ jobs:
         run: |
           echo "=== Building ${MODE} APK ==="
           chmod +x gradlew
-          ./gradlew assembleRelease
-          
+          set +e
+          ./gradlew assembleRelease --stacktrace 2>&1 | tee /tmp/gradle.log
+          EXIT=${PIPESTATUS[0]}
+          if [ $EXIT -ne 0 ]; then
+            {
+              echo "## Gradle 构建失败"
+              echo '```'
+              grep -E -A 25 "What went wrong|FAILURE:|error:" /tmp/gradle.log | head -100
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit $EXIT
+          fi
           echo "=== APK output ==="
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
@@ -90,7 +100,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: focus-self-apk-${{ env.MODE }}
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
       # ===== 如果没有签名密钥，额外提供指引 =====
