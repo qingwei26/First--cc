@@ -1,7 +1,9 @@
-// 专注力控制软件 - 数据存储与状态管理工具
-import { useState, useEffect } from 'react';
+// 专注力控制软件 - 统一状态管理（Zustand）
+// 所有模块共享同一份状态，修复了之前多 Hook 多副本导致的数据不一致问题
+import { create } from 'zustand';
 
-const STORAGE_KEYS = {
+// === 常量 ===
+export const STORAGE_KEYS = {
   DAILY_PLANS: 'focus_dailyPlans',
   CALENDAR_RECORDS: 'focus_calendarRecords',
   SHORT_TERM_PLANS: 'focus_shortTermPlans',
@@ -9,260 +11,24 @@ const STORAGE_KEYS = {
   ACTIVE_SESSION: 'focus_activeSession',
 };
 
-// 初始化默认设置
 const DEFAULT_SETTINGS = {
   allowedApps: ['电话', '微信', '短信'],
-  notificationFilter: 'whitelist', // whitelist: 仅白名单显示; all: 全部显示; none: 全部不显示
-  emergencyPenalty: true, // 紧急退出是否标记为雨天
-  exitReasonMinLength: 100, // 退出理由最少字数
+  notificationFilter: 'whitelist',
+  emergencyPenalty: true,
+  exitReasonMinLength: 100,
   theme: 'dark',
-  // 声音与震动
-  soundMode: 'sound', // 'sound': 声音; 'vibrate': 震动; 'mute': 静音
-  taskCompleteSound: true, // 完成单个任务时播放提示音
-  allCompleteSound: true, // 完成全部任务时播放庆祝音
-  soundVolume: 0.7, // 音量 0-1
+  soundMode: 'sound',
+  taskCompleteSound: true,
+  allCompleteSound: true,
+  soundVolume: 0.7,
 };
 
-// 本地存储辅助函数
-const storage = {
-  get(key, defaultValue = null) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  },
-  set(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  remove(key) {
-    localStorage.removeItem(key);
-  },
-};
-
-// 获取今天日期字符串 YYYY-MM-DD
-export const getTodayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
-// 生成唯一ID
-export const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-
-// === 设置相关 ===
-export const useSettings = () => {
-  const [settings, setSettings] = useState(() => {
-    const saved = storage.get(STORAGE_KEYS.SETTINGS);
-    return saved ? { ...DEFAULT_SETTINGS, ...saved } : DEFAULT_SETTINGS;
-  });
-
-  useEffect(() => {
-    storage.set(STORAGE_KEYS.SETTINGS, settings);
-  }, [settings]);
-
-  const updateSettings = (patch) => {
-    setSettings(prev => ({ ...prev, ...patch }));
-  };
-
-  const addAllowedApp = (appName) => {
-    setSettings(prev => ({
-      ...prev,
-      allowedApps: [...new Set([...prev.allowedApps, appName])],
-    }));
-  };
-
-  const removeAllowedApp = (appName) => {
-    setSettings(prev => ({
-      ...prev,
-      allowedApps: prev.allowedApps.filter(a => a !== appName),
-    }));
-  };
-
-  return { settings, updateSettings, addAllowedApp, removeAllowedApp };
-};
-
-// === 日历记录相关 ===
-// 状态: 'sunny' 晴天(全部完成), 'cloudy' 阴天(部分完成), 'rainy' 雨天(未完成/紧急退出)
-export const useCalendar = () => {
-  const [records, setRecords] = useState(() => storage.get(STORAGE_KEYS.CALENDAR_RECORDS, {}));
-
-  useEffect(() => {
-    storage.set(STORAGE_KEYS.CALENDAR_RECORDS, records);
-  }, [records]);
-
-  const setDayStatus = (dateStr, status, note = '') => {
-    setRecords(prev => ({
-      ...prev,
-      [dateStr]: { status, note, updatedAt: Date.now() },
-    }));
-  };
-
-  const getDayStatus = (dateStr) => records[dateStr] || null;
-
-  // 获取某月所有记录
-  const getMonthRecords = (year, month) => {
-    // month: 0-11
-    const result = {};
-    Object.keys(records).forEach(dateStr => {
-      const [y, m] = dateStr.split('-').map(Number);
-      if (y === year && m === month + 1) {
-        result[dateStr] = records[dateStr];
-      }
-    });
-    return result;
-  };
-
-  return { records, setDayStatus, getDayStatus, getMonthRecords };
-};
-
-// === 每日计划相关 ===
-export const useDailyPlans = () => {
-  const [plans, setPlans] = useState(() => storage.get(STORAGE_KEYS.DAILY_PLANS, {}));
-
-  useEffect(() => {
-    storage.set(STORAGE_KEYS.DAILY_PLANS, plans);
-  }, [plans]);
-
-  const createDailyPlan = (dateStr, tasks) => {
-    // tasks: [{ id, title, durationMin, completed, completedAt, appRestriction: [] }]
-    setPlans(prev => ({
-      ...prev,
-      [dateStr]: {
-        date: dateStr,
-        createdAt: Date.now(),
-        tasks: tasks.map(t => ({
-          id: genId(),
-          completed: false,
-          completedAt: null,
-          ...t,
-        })),
-      },
-    }));
-  };
-
-  const getDailyPlan = (dateStr) => plans[dateStr] || null;
-
-  const toggleTask = (dateStr, taskId) => {
-    setPlans(prev => {
-      const day = prev[dateStr];
-      if (!day) return prev;
-      return {
-        ...prev,
-        [dateStr]: {
-          ...day,
-          tasks: day.tasks.map(t =>
-            t.id === taskId
-              ? { ...t, completed: !t.completed, completedAt: !t.completed ? Date.now() : null }
-              : t
-          ),
-        },
-      };
-    });
-  };
-
-  const setTaskCompleted = (dateStr, taskId, completed) => {
-    setPlans(prev => {
-      const day = prev[dateStr];
-      if (!day) return prev;
-      return {
-        ...prev,
-        [dateStr]: {
-          ...day,
-          tasks: day.tasks.map(t =>
-            t.id === taskId
-              ? { ...t, completed, completedAt: completed ? Date.now() : null }
-              : t
-          ),
-        },
-      };
-    });
-  };
-
-  const updateTask = (dateStr, taskId, patch) => {
-    setPlans(prev => {
-      const day = prev[dateStr];
-      if (!day) return prev;
-      return {
-        ...prev,
-        [dateStr]: {
-          ...day,
-          tasks: day.tasks.map(t => (t.id === taskId ? { ...t, ...patch } : t)),
-        },
-      };
-    });
-  };
-
-  const addTask = (dateStr, task) => {
-    setPlans(prev => {
-      const day = prev[dateStr] || { date: dateStr, createdAt: Date.now(), tasks: [] };
-      return {
-        ...prev,
-        [dateStr]: {
-          ...day,
-          tasks: [...day.tasks, { id: genId(), completed: false, completedAt: null, ...task }],
-        },
-      };
-    });
-  };
-
-  const removeTask = (dateStr, taskId) => {
-    setPlans(prev => {
-      const day = prev[dateStr];
-      if (!day) return prev;
-      return {
-        ...prev,
-        [dateStr]: {
-          ...day,
-          tasks: day.tasks.filter(t => t.id !== taskId),
-        },
-      };
-    });
-  };
-
-  // 检查某天是否所有任务完成
-  const isDayCompleted = (dateStr) => {
-    const day = plans[dateStr];
-    if (!day || day.tasks.length === 0) return false;
-    return day.tasks.every(t => t.completed);
-  };
-
-  // 获取完成率
-  const getDayProgress = (dateStr) => {
-    const day = plans[dateStr];
-    if (!day || day.tasks.length === 0) return { done: 0, total: 0, rate: 0 };
-    const done = day.tasks.filter(t => t.completed).length;
-    return { done, total: day.tasks.length, rate: done / day.tasks.length };
-  };
-
-  return {
-    plans,
-    createDailyPlan,
-    getDailyPlan,
-    toggleTask,
-    setTaskCompleted,
-    updateTask,
-    addTask,
-    removeTask,
-    isDayCompleted,
-    getDayProgress,
-  };
-};
-
-// === 短期计划相关 ===
-// 类型: 7天, 14天, 30天
 export const SHORT_TERM_TYPES = {
   7: { days: 7, label: '7天挑战', puzzlePieces: 7 },
   14: { days: 14, label: '14天挑战', puzzlePieces: 14 },
   30: { days: 30, label: '30天挑战', puzzlePieces: 30 },
 };
 
-// 阶段预设：按天数自动生成阶段性日程
 export const PHASE_PRESETS = {
   7: [
     { phase: '基础入门', days: [1, 2], tasks: '查找基本概念及知识30分钟\n阅读入门教材45分钟\n整理笔记15分钟' },
@@ -282,461 +48,6 @@ export const PHASE_PRESETS = {
   ],
 };
 
-// 根据天数生成每日独立日程
-export const generatePerDaySchedules = (type) => {
-  const typeInfo = SHORT_TERM_TYPES[type] || SHORT_TERM_TYPES[7];
-  const presets = PHASE_PRESETS[type] || PHASE_PRESETS[7];
-  const schedules = [];
-  for (let i = 0; i < typeInfo.days; i++) {
-    const dayIdx = i + 1;
-    const phase = presets.find(p => p.days.includes(dayIdx));
-    const taskText = phase
-      ? `【${phase.phase}】\n${phase.tasks}`
-      : '晨读30分钟\n深度学习90分钟\n运动30分钟';
-    schedules.push(taskText.split('\n').map(line => line.trim()).filter(Boolean));
-  }
-  return schedules;
-};
-
-export const useShortTermPlans = () => {
-  const [shortPlans, setShortPlans] = useState(() => storage.get(STORAGE_KEYS.SHORT_TERM_PLANS, []));
-
-  useEffect(() => {
-    storage.set(STORAGE_KEYS.SHORT_TERM_PLANS, shortPlans);
-  }, [shortPlans]);
-
-  const createShortTermPlan = ({ title, type, goal, startDate, dailySchedule = [], perDaySchedules = null }) => {
-    // dailySchedule: 统一每日任务 [{ title, durationMin }]（兼容旧版）
-    // perDaySchedules: 每日独立任务 [[{ title, durationMin }], ...]，数组索引 = dayIndex-1
-    const typeInfo = SHORT_TERM_TYPES[type] || SHORT_TERM_TYPES[7];
-    const daysArr = [];
-    const start = new Date(startDate);
-    for (let i = 0; i < typeInfo.days; i++) {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const dayTasks = perDaySchedules && perDaySchedules[i]
-        ? perDaySchedules[i]
-        : dailySchedule;
-      daysArr.push({
-        date: dateStr,
-        dayIndex: i + 1,
-        completed: false,
-        tasks: dayTasks.map(t => ({ ...t, id: genId(), completed: false })),
-        completedAt: null,
-      });
-    }
-    const newPlan = {
-      id: genId(),
-      title,
-      type,
-      goal,
-      startDate,
-      createdAt: Date.now(),
-      days: daysArr,
-      puzzleCompleted: false,
-    };
-    setShortPlans(prev => [...prev, newPlan]);
-    return newPlan.id;
-  };
-
-  const markDayCompleted = (planId, dayIndex) => {
-    setShortPlans(prev =>
-      prev.map(p => {
-        if (p.id !== planId) return p;
-        const newDays = p.days.map(d =>
-          d.dayIndex === dayIndex
-            ? { ...d, completed: true, completedAt: Date.now() }
-            : d
-        );
-        const allDone = newDays.every(d => d.completed);
-        return {
-          ...p,
-          days: newDays,
-          puzzleCompleted: allDone,
-        };
-      })
-    );
-  };
-
-  const markDayTask = (planId, dayIndex, taskId, completed, remainingTime = null) => {
-    setShortPlans(prev =>
-      prev.map(p => {
-        if (p.id !== planId) return p;
-        return {
-          ...p,
-          days: p.days.map(d => {
-            if (d.dayIndex !== dayIndex) return d;
-            const newTasks = d.tasks.map(t =>
-              t.id === taskId ? { ...t, completed } : t
-            );
-            const allTasksDone = newTasks.length > 0 && newTasks.every(t => t.completed);
-            return {
-              ...d,
-              tasks: newTasks,
-              completed: allTasksDone,
-              completedAt: allTasksDone ? Date.now() : d.completedAt,
-              remainingTime: allTasksDone && remainingTime !== null ? remainingTime : d.remainingTime,
-            };
-          }),
-        };
-      })
-    );
-  };
-
-  const getPlanProgress = (planId) => {
-    const plan = shortPlans.find(p => p.id === planId);
-    if (!plan) return { done: 0, total: 0, rate: 0 };
-    const done = plan.days.filter(d => d.completed).length;
-    return { done, total: plan.days.length, rate: done / plan.days.length };
-  };
-
-  const deletePlan = (planId) => {
-    setShortPlans(prev => prev.filter(p => p.id !== planId));
-  };
-
-  const updateDayTasks = (planId, dayIndex, newTasks) => {
-    setShortPlans(prev =>
-      prev.map(p => {
-        if (p.id !== planId) return p;
-        return {
-          ...p,
-          days: p.days.map(d => {
-            if (d.dayIndex !== dayIndex) return d;
-            const updatedTasks = newTasks.map(t => ({
-              ...t,
-              id: t.id || genId(),
-              completed: t.completed || false,
-            }));
-            const allDone = updatedTasks.length > 0 && updatedTasks.every(t => t.completed);
-            return {
-              ...d,
-              tasks: updatedTasks,
-              completed: allDone,
-              completedAt: allDone ? Date.now() : null,
-            };
-          }),
-        };
-      })
-    );
-  };
-
-  const updateShortTermPlan = (planId, updates) => {
-    // updates: { title?, goal?, startDate?, dailySchedule?, perDaySchedules? }
-    setShortPlans(prev =>
-      prev.map(p => {
-        if (p.id !== planId) return p;
-        const newDays = p.days.map((d, idx) => {
-          // 已完成的天保持不变
-          if (d.completed) return d;
-
-          // 统一日程模式
-          if (updates.dailySchedule) {
-            return {
-              ...d,
-              tasks: updates.dailySchedule.map(t => ({
-                ...t,
-                id: genId(),
-                completed: false,
-              })),
-              completed: false,
-              completedAt: null,
-            };
-          }
-
-          // 每日独立模式
-          if (updates.perDaySchedules && updates.perDaySchedules[idx]) {
-            return {
-              ...d,
-              tasks: updates.perDaySchedules[idx].map(t => ({
-                ...t,
-                id: genId(),
-                completed: false,
-              })),
-              completed: false,
-              completedAt: null,
-            };
-          }
-
-          return d;
-        });
-
-        return {
-          ...p,
-          title: updates.title ?? p.title,
-          goal: updates.goal ?? p.goal,
-          startDate: updates.startDate ?? p.startDate,
-          days: newDays,
-        };
-      })
-    );
-  };
-
-  // 获取某天所属的阶段信息
-  const getDayPhase = (plan) => {
-    if (!plan) return {};
-    const presets = PHASE_PRESETS[plan.type] || PHASE_PRESETS[7];
-    return presets.map(p => {
-      const range = p.days.length === 1 ? `第${p.days[0]}天` : `第${p.days[0]}-${p.days[p.days.length - 1]}天`;
-      return { ...p, range };
-    });
-  };
-
-  return {
-    shortPlans,
-    createShortTermPlan,
-    markDayCompleted,
-    markDayTask,
-    getPlanProgress,
-    deletePlan,
-    updateDayTasks,
-    updateShortTermPlan,
-    getDayPhase,
-  };
-};
-
-// === 专注会话控制 ===
-// 用于控制计划期间不能退出
-export const useActiveSession = () => {
-  const [session, setSession] = useState(() => storage.get(STORAGE_KEYS.ACTIVE_SESSION, null));
-
-  useEffect(() => {
-    if (session) {
-      storage.set(STORAGE_KEYS.ACTIVE_SESSION, session);
-    } else {
-      storage.remove(STORAGE_KEYS.ACTIVE_SESSION);
-    }
-  }, [session]);
-
-  const startSession = (planType, planId, dateStr, tasks) => {
-    const s = {
-      id: genId(),
-      planType, // 'daily' | 'shortTerm'
-      planId,
-      dateStr,
-      startedAt: Date.now(),
-      tasks: tasks.map(t => ({ ...t, sessionCompleted: !!t.completed })),
-      status: 'running', // running | paused | completed | exited | emergency
-    };
-    setSession(s);
-    return s;
-  };
-
-  const completeSession = () => {
-    setSession(prev => prev ? { ...prev, status: 'completed', endedAt: Date.now() } : null);
-    // 清除
-    setTimeout(() => setSession(null), 500);
-  };
-
-  const exitWithReason = (reason) => {
-    setSession(prev => prev ? { ...prev, status: 'exited', exitReason: reason, endedAt: Date.now() } : null);
-    setTimeout(() => setSession(null), 500);
-  };
-
-  const emergencyExit = () => {
-    setSession(prev => prev ? { ...prev, status: 'emergency', endedAt: Date.now() } : null);
-    setTimeout(() => setSession(null), 500);
-  };
-
-  const toggleSessionTask = (taskId) => {
-    setSession(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        tasks: prev.tasks.map(t =>
-          t.id === taskId ? { ...t, sessionCompleted: !t.sessionCompleted } : t
-        ),
-      };
-    });
-  };
-
-  return {
-    session,
-    startSession,
-    completeSession,
-    exitWithReason,
-    emergencyExit,
-    toggleSessionTask,
-  };
-};
-
-// 导出 storage
-export { storage, STORAGE_KEYS };
-
-// === 声音与震动工具 ===
-let audioCtx = null;
-
-const getAudioCtx = () => {
-  if (!audioCtx) {
-    try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      console.log('[Sound] AudioContext created, state:', audioCtx.state, 'sampleRate:', audioCtx.sampleRate);
-    } catch (err) {
-      console.error('[Sound] Failed to create AudioContext:', err);
-      return null;
-    }
-  }
-  if (audioCtx.state === 'suspended') {
-    console.log('[Sound] AudioContext suspended, resuming...');
-    audioCtx.resume().then(() => {
-      console.log('[Sound] AudioContext resumed');
-    }).catch(err => {
-      console.error('[Sound] Failed to resume AudioContext:', err);
-    });
-  }
-  return audioCtx;
-};
-
-// 播放单个提示音（短促清脆）
-const playBeep = (freq = 880, duration = 0.15, volume = 0.7) => {
-  console.log(`[Sound] playBeep called: freq=${freq}, duration=${duration}s, volume=${volume}`);
-  const ctx = getAudioCtx();
-  if (!ctx) {
-    console.warn('[Sound] playBeep aborted: no AudioContext available');
-    return;
-  }
-  try {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    osc.type = 'sine';
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + duration);
-    console.log(`[Sound] playBeep started: ${freq}Hz for ${duration}s at volume ${volume}`);
-  } catch (err) {
-    console.error('[Sound] playBeep error:', err);
-  }
-};
-
-// 播放完成单个任务的提示音
-const playTaskCompleteSound = (volume = 0.7) => {
-  console.log(`[Sound] playTaskCompleteSound triggered, volume=${volume}`);
-  const ctx = getAudioCtx();
-  if (!ctx) {
-    console.warn('[Sound] playTaskCompleteSound aborted: no AudioContext');
-    return;
-  }
-  console.log('[Sound] Playing task-complete beep: 880Hz + 1175Hz');
-  playBeep(880, 0.1, volume);
-  setTimeout(() => {
-    console.log('[Sound] Playing second beep: 1175Hz');
-    playBeep(1175, 0.12, volume);
-  }, 100);
-};
-
-// 播放全部完成的庆祝音（三音阶上升）
-const playAllCompleteSound = (volume = 0.7) => {
-  console.log(`[Sound] playAllCompleteSound triggered, volume=${volume}`);
-  const ctx = getAudioCtx();
-  if (!ctx) {
-    console.warn('[Sound] playAllCompleteSound aborted: no AudioContext');
-    return;
-  }
-  const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
-  console.log('[Sound] Playing celebration notes:', notes.join(', '));
-  notes.forEach((freq, i) => {
-    setTimeout(() => {
-      console.log(`[Sound] Celebration note ${i+1}/4: ${freq}Hz`);
-      playBeep(freq, 0.2, volume);
-    }, i * 150);
-  });
-};
-
-// 震动模式
-const vibrate = (pattern) => {
-  console.log(`[Vibrate] vibrate called with pattern:`, pattern);
-  if (navigator.vibrate) {
-    try {
-      const result = navigator.vibrate(pattern);
-      console.log('[Vibrate] navigator.vibrate result:', result);
-    } catch (err) {
-      console.error('[Vibrate] navigator.vibrate error:', err);
-    }
-  } else {
-    console.warn('[Vibrate] navigator.vibrate not supported on this device');
-  }
-};
-
-// 统一的提示入口
-export const playNotification = (type, settings) => {
-  console.log(`[Sound] playNotification called: type="${type}"`, {
-    soundMode: settings?.soundMode,
-    taskCompleteSound: settings?.taskCompleteSound,
-    allCompleteSound: settings?.allCompleteSound,
-    soundVolume: settings?.soundVolume,
-  });
-  
-  if (!settings) {
-    console.warn('[Sound] No settings provided, skipping');
-    return;
-  }
-  
-  const { soundMode, taskCompleteSound, allCompleteSound, soundVolume } = settings;
-  
-  if (soundMode === 'mute') {
-    console.log('[Sound] MUTE mode: no notification played');
-    return;
-  }
-  
-  if (soundMode === 'vibrate') {
-    if (type === 'task' && taskCompleteSound) {
-      console.log('[Sound] VIBRATE mode: task complete vibration');
-      vibrate([50, 50, 50]);
-    } else if (type === 'all' && allCompleteSound) {
-      console.log('[Sound] VIBRATE mode: all complete vibration');
-      vibrate([100, 50, 100, 50, 200]);
-    } else {
-      console.log('[Sound] VIBRATE mode: sound disabled for this type or type unknown');
-    }
-    return;
-  }
-  
-  // sound mode
-  if (type === 'task') {
-    if (taskCompleteSound) {
-      console.log('[Sound] SOUND mode: playing task-complete sound');
-      playTaskCompleteSound(soundVolume);
-    } else {
-      console.log('[Sound] SOUND mode: task sound disabled in settings');
-    }
-  } else if (type === 'all') {
-    if (allCompleteSound) {
-      console.log('[Sound] SOUND mode: playing celebration sound');
-      playAllCompleteSound(soundVolume);
-    } else {
-      console.log('[Sound] SOUND mode: celebration sound disabled in settings');
-    }
-  } else {
-    console.warn(`[Sound] Unknown notification type: "${type}"`);
-  }
-};
-
-// 测试音效
-export const testSound = (type, settings) => {
-  console.log(`[Sound] testSound: type="${type}"`);
-  const s = settings || { soundVolume: 0.7 };
-  if (type === 'task') {
-    playTaskCompleteSound(s.soundVolume);
-  } else if (type === 'all') {
-    playAllCompleteSound(s.soundVolume);
-  }
-};
-
-export const testVibrate = (type) => {
-  console.log(`[Sound] testVibrate: type="${type}"`);
-  if (type === 'task') {
-    vibrate([50, 50, 50]);
-  } else if (type === 'all') {
-    vibrate([100, 50, 100, 50, 200]);
-  }
-};
-
-// === 成就与统计系统 ===
 export const ACHIEVEMENTS = [
   { id: 'first_day', name: '初次打卡', desc: '完成第一天的所有任务', emoji: '🌱', check: (s) => s.sunnyDays >= 1 },
   { id: 'streak_3', name: '坚持3天', desc: '连续3天完成全部任务', emoji: '🔥', check: (s) => s.maxStreak >= 3 },
@@ -763,27 +74,353 @@ export const LEVELS = [
   { level: 8, name: '传奇', emoji: '🏆', minExp: 5000 },
 ];
 
-// 计算连续打卡天数
+// === 工具函数 ===
+export const getTodayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+export const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// 本地存储辅助 + debounce
+const storage = {
+  get(key, defaultValue = null) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
+  },
+  remove(key) { localStorage.removeItem(key); },
+};
+
+// debounce 封装，避免高频写入 localStorage
+const debouncedWrites = {};
+const debouncedSet = (key, value, delay = 300) => {
+  if (debouncedWrites[key]) clearTimeout(debouncedWrites[key]);
+  debouncedWrites[key] = setTimeout(() => {
+    storage.set(key, value);
+    delete debouncedWrites[key];
+  }, delay);
+};
+
+// === 统一 Zustand Store ===
+const createInitialState = () => ({
+  settings: { ...DEFAULT_SETTINGS, ...storage.get(STORAGE_KEYS.SETTINGS, {}) },
+  records: storage.get(STORAGE_KEYS.CALENDAR_RECORDS, {}),
+  plans: storage.get(STORAGE_KEYS.DAILY_PLANS, {}),
+  shortPlans: storage.get(STORAGE_KEYS.SHORT_TERM_PLANS, []),
+  session: storage.get(STORAGE_KEYS.ACTIVE_SESSION, null),
+});
+
+// 持久化 effect 包装器 —— 自动 debounce 写 localStorage
+const persist = (key, selector) => (set, get) => (listener) => {
+  const unsubscribe = get.subscribe((state, prevState) => {
+    const next = selector(state);
+    const prev = selector(prevState);
+    if (next !== prev) debouncedSet(key, next);
+  });
+  return unsubscribe;
+};
+
+export const useStore = create((set, get) => ({
+  ...createInitialState(),
+
+  // === 设置 ===
+  updateSettings: (patch) => set(s => ({ settings: { ...s.settings, ...patch } })),
+  addAllowedApp: (appName) => set(s => ({
+    settings: { ...s.settings, allowedApps: [...new Set([...s.settings.allowedApps, appName])] }
+  })),
+  removeAllowedApp: (appName) => set(s => ({
+    settings: { ...s.settings, allowedApps: s.settings.allowedApps.filter(a => a !== appName) }
+  })),
+
+  // === 日历 ===
+  setDayStatus: (dateStr, status, note = '') => set(s => ({
+    records: { ...s.records, [dateStr]: { status, note, updatedAt: Date.now() } }
+  })),
+
+  // === 每日计划 ===
+  createDailyPlan: (dateStr, tasks) => set(s => ({
+    plans: {
+      ...s.plans,
+      [dateStr]: {
+        date: dateStr, createdAt: Date.now(),
+        tasks: tasks.map(t => ({ id: genId(), completed: false, completedAt: null, ...t })),
+      },
+    },
+  })),
+  toggleTask: (dateStr, taskId) => set(s => {
+    const day = s.plans[dateStr];
+    if (!day) return {};
+    return {
+      plans: {
+        ...s.plans,
+        [dateStr]: {
+          ...day,
+          tasks: day.tasks.map(t =>
+            t.id === taskId
+              ? { ...t, completed: !t.completed, completedAt: !t.completed ? Date.now() : null }
+              : t
+          ),
+        },
+      },
+    };
+  }),
+  setTaskCompleted: (dateStr, taskId, completed) => set(s => {
+    const day = s.plans[dateStr];
+    if (!day) return {};
+    return {
+      plans: {
+        ...s.plans,
+        [dateStr]: {
+          ...day,
+          tasks: day.tasks.map(t =>
+            t.id === taskId
+              ? { ...t, completed, completedAt: completed ? Date.now() : null }
+              : t
+          ),
+        },
+      },
+    };
+  }),
+  updateTask: (dateStr, taskId, patch) => set(s => {
+    const day = s.plans[dateStr];
+    if (!day) return {};
+    return {
+      plans: {
+        ...s.plans,
+        [dateStr]: {
+          ...day,
+          tasks: day.tasks.map(t => (t.id === taskId ? { ...t, ...patch } : t)),
+        },
+      },
+    };
+  }),
+  addTask: (dateStr, task) => set(s => {
+    const day = s.plans[dateStr] || { date: dateStr, createdAt: Date.now(), tasks: [] };
+    return {
+      plans: {
+        ...s.plans,
+        [dateStr]: { ...day, tasks: [...day.tasks, { id: genId(), completed: false, completedAt: null, ...task }] },
+      },
+    };
+  }),
+  removeTask: (dateStr, taskId) => set(s => {
+    const day = s.plans[dateStr];
+    if (!day) return {};
+    return {
+      plans: {
+        ...s.plans,
+        [dateStr]: { ...day, tasks: day.tasks.filter(t => t.id !== taskId) },
+      },
+    };
+  }),
+
+  // === 短期计划 ===
+  createShortTermPlan: ({ title, type, goal, startDate, dailySchedule = [], perDaySchedules = null }) => {
+    const typeInfo = SHORT_TERM_TYPES[type] || SHORT_TERM_TYPES[7];
+    const daysArr = [];
+    const start = new Date(startDate);
+    for (let i = 0; i < typeInfo.days; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const dayTasks = perDaySchedules && perDaySchedules[i] ? perDaySchedules[i] : dailySchedule;
+      daysArr.push({
+        date: dateStr, dayIndex: i + 1, completed: false,
+        tasks: dayTasks.map(t => ({ ...t, id: genId(), completed: false })),
+        completedAt: null,
+      });
+    }
+    const newPlan = {
+      id: genId(), title, type, goal, startDate, createdAt: Date.now(),
+      days: daysArr, puzzleCompleted: false,
+    };
+    set(s => ({ shortPlans: [...s.shortPlans, newPlan] }));
+    return newPlan.id;
+  },
+  markDayCompleted: (planId, dayIndex) => set(s => ({
+    shortPlans: s.shortPlans.map(p => {
+      if (p.id !== planId) return p;
+      const newDays = p.days.map(d =>
+        d.dayIndex === dayIndex ? { ...d, completed: true, completedAt: Date.now() } : d
+      );
+      const allDone = newDays.every(d => d.completed);
+      return { ...p, days: newDays, puzzleCompleted: allDone };
+    }),
+  })),
+  markDayTask: (planId, dayIndex, taskId, completed, remainingTime = null) => set(s => ({
+    shortPlans: s.shortPlans.map(p => {
+      if (p.id !== planId) return p;
+      return {
+        ...p,
+        days: p.days.map(d => {
+          if (d.dayIndex !== dayIndex) return d;
+          const newTasks = d.tasks.map(t => (t.id === taskId ? { ...t, completed } : t));
+          const allTasksDone = newTasks.length > 0 && newTasks.every(t => t.completed);
+          return {
+            ...d,
+            tasks: newTasks,
+            completed: allTasksDone,
+            completedAt: allTasksDone ? Date.now() : d.completedAt,
+            remainingTime: allTasksDone && remainingTime !== null ? remainingTime : d.remainingTime,
+          };
+        }),
+      };
+    }),
+  })),
+  deletePlan: (planId) => set(s => ({ shortPlans: s.shortPlans.filter(p => p.id !== planId) })),
+  updateDayTasks: (planId, dayIndex, newTasks) => set(s => ({
+    shortPlans: s.shortPlans.map(p => {
+      if (p.id !== planId) return p;
+      return {
+        ...p,
+        days: p.days.map(d => {
+          if (d.dayIndex !== dayIndex) return d;
+          const updatedTasks = newTasks.map(t => ({ ...t, id: t.id || genId(), completed: t.completed || false }));
+          const allDone = updatedTasks.length > 0 && updatedTasks.every(t => t.completed);
+          return { ...d, tasks: updatedTasks, completed: allDone, completedAt: allDone ? Date.now() : null };
+        }),
+      };
+    }),
+  })),
+  updateShortTermPlan: (planId, updates) => set(s => ({
+    shortPlans: s.shortPlans.map(p => {
+      if (p.id !== planId) return p;
+      const newDays = p.days.map((d, idx) => {
+        if (d.completed) return d;
+        if (updates.dailySchedule) {
+          return { ...d, tasks: updates.dailySchedule.map(t => ({ ...t, id: genId(), completed: false })), completed: false, completedAt: null };
+        }
+        if (updates.perDaySchedules && updates.perDaySchedules[idx]) {
+          return { ...d, tasks: updates.perDaySchedules[idx].map(t => ({ ...t, id: genId(), completed: false })), completed: false, completedAt: null };
+        }
+        return d;
+      });
+      return {
+        ...p,
+        title: updates.title ?? p.title,
+        goal: updates.goal ?? p.goal,
+        startDate: updates.startDate ?? p.startDate,
+        days: newDays,
+      };
+    }),
+  })),
+
+  // === 专注会话 ===
+  startSession: (planType, planId, dateStr, tasks) => {
+    const s = {
+      id: genId(), planType, planId, dateStr,
+      startedAt: Date.now(),
+      tasks: tasks.map(t => ({ ...t, sessionCompleted: !!t.completed })),
+      status: 'running',
+    };
+    set({ session: s });
+    return s;
+  },
+  completeSession: () => set(s => {
+    // 用 Promise 模拟延迟清理，避免卸载警告；组件内部自己处理退出
+    Promise.resolve().then(() => {
+      if (get().session?.id === s.session?.id) set({ session: null });
+    });
+    return { session: s.session ? { ...s.session, status: 'completed', endedAt: Date.now() } : null };
+  }),
+  exitWithReason: (reason) => set(s => {
+    Promise.resolve().then(() => {
+      if (get().session?.id === s.session?.id) set({ session: null });
+    });
+    return { session: s.session ? { ...s.session, status: 'exited', exitReason: reason, endedAt: Date.now() } : null };
+  }),
+  emergencyExit: () => set(s => {
+    Promise.resolve().then(() => {
+      if (get().session?.id === s.session?.id) set({ session: null });
+    });
+    return { session: s.session ? { ...s.session, status: 'emergency', endedAt: Date.now() } : null };
+  }),
+  toggleSessionTask: (taskId) => set(s => {
+    if (!s.session) return {};
+    return {
+      session: {
+        ...s.session,
+        tasks: s.session.tasks.map(t =>
+          t.id === taskId ? { ...t, sessionCompleted: !t.sessionCompleted } : t
+        ),
+      },
+    };
+  }),
+}));
+
+// === 派生查询函数（避免组件重复计算） ===
+export const getDayStatus = (dateStr) => useStore.getState().records[dateStr] || null;
+export const getMonthRecords = (year, month) => {
+  const records = useStore.getState().records;
+  const result = {};
+  Object.keys(records).forEach(dateStr => {
+    const [y, m] = dateStr.split('-').map(Number);
+    if (y === year && m === month + 1) result[dateStr] = records[dateStr];
+  });
+  return result;
+};
+export const getDailyPlan = (dateStr) => useStore.getState().plans[dateStr] || null;
+export const isDayCompleted = (dateStr) => {
+  const day = useStore.getState().plans[dateStr];
+  return day && day.tasks.length > 0 && day.tasks.every(t => t.completed);
+};
+export const getDayProgress = (dateStr) => {
+  const day = useStore.getState().plans[dateStr];
+  if (!day || day.tasks.length === 0) return { done: 0, total: 0, rate: 0 };
+  const done = day.tasks.filter(t => t.completed).length;
+  return { done, total: day.tasks.length, rate: done / day.tasks.length };
+};
+export const getPlanProgress = (planId) => {
+  const plan = useStore.getState().shortPlans.find(p => p.id === planId);
+  if (!plan) return { done: 0, total: 0, rate: 0 };
+  const done = plan.days.filter(d => d.completed).length;
+  return { done, total: plan.days.length, rate: done / plan.days.length };
+};
+export const getDayPhase = (plan) => {
+  if (!plan) return {};
+  const presets = PHASE_PRESETS[plan.type] || PHASE_PRESETS[7];
+  return presets.map(p => {
+    const range = p.days.length === 1 ? `第${p.days[0]}天` : `第${p.days[0]}-${p.days[p.days.length - 1]}天`;
+    return { ...p, range };
+  });
+};
+
+// === 每日独立日程生成 ===
+export const generatePerDaySchedules = (type) => {
+  const typeInfo = SHORT_TERM_TYPES[type] || SHORT_TERM_TYPES[7];
+  const presets = PHASE_PRESETS[type] || PHASE_PRESETS[7];
+  const schedules = [];
+  for (let i = 0; i < typeInfo.days; i++) {
+    const dayIdx = i + 1;
+    const phase = presets.find(p => p.days.includes(dayIdx));
+    const taskText = phase
+      ? `【${phase.phase}】\n${phase.tasks}`
+      : '晨读30分钟\n深度学习90分钟\n运动30分钟';
+    schedules.push(taskText.split('\n').map(line => line.trim()).filter(Boolean));
+  }
+  return schedules;
+};
+
+// === 统计 ===
 const calcMaxStreak = (records) => {
   const dates = Object.keys(records).filter(d => records[d].status === 'sunny').sort();
   if (dates.length === 0) return 0;
-  let maxStreak = 1;
-  let currentStreak = 1;
+  let maxStreak = 1, currentStreak = 1;
   for (let i = 1; i < dates.length; i++) {
-    const prev = new Date(dates[i - 1]);
-    const curr = new Date(dates[i]);
-    const diffDays = (curr - prev) / (1000 * 60 * 60 * 24);
-    if (diffDays === 1) {
-      currentStreak++;
-      maxStreak = Math.max(maxStreak, currentStreak);
-    } else {
-      currentStreak = 1;
-    }
+    const diffDays = (new Date(dates[i]) - new Date(dates[i - 1])) / 86400000;
+    if (diffDays === 1) { currentStreak++; maxStreak = Math.max(maxStreak, currentStreak); }
+    else currentStreak = 1;
   }
   return maxStreak;
 };
 
-// 获取统计数据
 export const getStatistics = () => {
   const records = storage.get(STORAGE_KEYS.CALENDAR_RECORDS, {});
   const dailyPlans = storage.get(STORAGE_KEYS.DAILY_PLANS, {});
@@ -795,54 +432,29 @@ export const getStatistics = () => {
   const rainyDays = allDays.filter(d => records[d].status === 'rainy').length;
   const maxStreak = calcMaxStreak(records);
 
-  // 总完成任务数
-  let totalTasks = 0;
+  let totalTasks = 0, totalMinutes = 0;
   Object.values(dailyPlans).forEach(plan => {
     if (plan.tasks) {
-      totalTasks += plan.tasks.filter(t => t.completed).length;
+      plan.tasks.forEach(t => {
+        if (t.completed) { totalTasks++; totalMinutes += t.durationMin || 0; }
+      });
     }
   });
 
-  // 已完成短期挑战数
   const completedShortPlans = shortTermPlans.filter(p => p.puzzleCompleted).length;
 
-  // 当月统计
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  const year = now.getFullYear(), month = now.getMonth() + 1;
   const monthDays = allDays.filter(d => {
     const [y, m] = d.split('-').map(Number);
     return y === year && m === month;
   });
   const monthSunny = monthDays.filter(d => records[d].status === 'sunny').length;
-  const monthTotal = monthDays.length;
 
-  // 总专注时长估算（基于任务时长）
-  let totalMinutes = 0;
-  Object.values(dailyPlans).forEach(plan => {
-    if (plan.tasks) {
-      plan.tasks.forEach(t => {
-        if (t.completed) totalMinutes += t.durationMin || 0;
-      });
-    }
-  });
+  const stats = { sunnyDays, cloudyDays, rainyDays, maxStreak, totalTasks, completedShortPlans, monthSunny, monthTotal: monthDays.length, totalMinutes };
 
-  const stats = {
-    sunnyDays,
-    cloudyDays,
-    rainyDays,
-    maxStreak,
-    totalTasks,
-    completedShortPlans,
-    monthSunny,
-    monthTotal,
-    totalMinutes,
-  };
-
-  // 计算等级
   const exp = sunnyDays * 10 + totalTasks * 2 + completedShortPlans * 50;
-  let currentLevel = LEVELS[0];
-  let nextLevel = LEVELS[1];
+  let currentLevel = LEVELS[0], nextLevel = LEVELS[1];
   for (let i = LEVELS.length - 1; i >= 0; i--) {
     if (exp >= LEVELS[i].minExp) {
       currentLevel = LEVELS[i];
@@ -850,45 +462,37 @@ export const getStatistics = () => {
       break;
     }
   }
-
   const unlockedAchievements = ACHIEVEMENTS.filter(a => a.check(stats)).map(a => a.id);
-
   return {
-    ...stats,
-    exp,
-    currentLevel,
-    nextLevel,
+    ...stats, exp, currentLevel, nextLevel,
     progressToNext: nextLevel ? Math.min(100, Math.round(((exp - currentLevel.minExp) / (nextLevel.minExp - currentLevel.minExp)) * 100)) : 100,
     unlockedAchievements,
   };
 };
 
-// === 数据备份 ===
+// === 备份 ===
 export const exportAllData = () => {
   const data = {};
-  Object.values(STORAGE_KEYS).forEach(key => {
-    data[key] = storage.get(key, null);
-  });
-  data.__exportMeta = {
-    timestamp: Date.now(),
-    version: 1,
-    app: 'FocusSelf',
-  };
+  Object.values(STORAGE_KEYS).forEach(key => { data[key] = storage.get(key, null); });
+  data.__exportMeta = { timestamp: Date.now(), version: 1, app: 'FocusSelf' };
   return JSON.stringify(data, null, 2);
 };
 
 export const importAllData = (jsonString) => {
   try {
     const data = JSON.parse(jsonString);
-    if (!data.__exportMeta || data.__exportMeta.app !== 'FocusSelf') {
-      return { success: false, error: '无效的备份文件' };
-    }
+    if (!data.__exportMeta || data.__exportMeta.app !== 'FocusSelf') return { success: false, error: '无效的备份文件' };
     let importedCount = 0;
     Object.keys(STORAGE_KEYS).forEach(key => {
-      if (data[key] !== null && data[key] !== undefined) {
-        storage.set(key, data[key]);
-        importedCount++;
-      }
+      if (data[key] !== null && data[key] !== undefined) { storage.set(key, data[key]); importedCount++; }
+    });
+    // 同步到 store
+    useStore.setState({
+      settings: { ...DEFAULT_SETTINGS, ...data[STORAGE_KEYS.SETTINGS] },
+      records: data[STORAGE_KEYS.CALENDAR_RECORDS] || {},
+      plans: data[STORAGE_KEYS.DAILY_PLANS] || {},
+      shortPlans: data[STORAGE_KEYS.SHORT_TERM_PLANS] || [],
+      session: data[STORAGE_KEYS.ACTIVE_SESSION] || null,
     });
     return { success: true, importedCount };
   } catch (err) {
@@ -901,9 +505,143 @@ export const downloadBackup = () => {
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const dateStr = getTodayStr();
   a.href = url;
-  a.download = `focus-self-backup-${dateStr}.json`;
+  a.download = `focus-self-backup-${getTodayStr()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 };
+
+// === 声音系统（单例 AudioContext + 无 console.log） ===
+let _audioCtx = null;
+const getAudioCtx = () => {
+  if (!_audioCtx) {
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch { return null; }
+  }
+  if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+  return _audioCtx;
+};
+
+const _activeTimeouts = new Set();
+const scheduleTimeout = (fn, delay) => {
+  const id = setTimeout(() => { _activeTimeouts.delete(id); fn(); }, delay);
+  _activeTimeouts.add(id);
+  return id;
+};
+
+export const clearAudioTimeouts = () => {
+  _activeTimeouts.forEach(id => clearTimeout(id));
+  _activeTimeouts.clear();
+};
+
+const playBeep = (freq = 880, duration = 0.15, volume = 0.7) => {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch { /* ignore */ }
+};
+
+const playTaskCompleteSound = (volume = 0.7) => {
+  playBeep(880, 0.1, volume);
+  scheduleTimeout(() => playBeep(1175, 0.12, volume), 100);
+};
+
+const playAllCompleteSound = (volume = 0.7) => {
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+    scheduleTimeout(() => playBeep(freq, 0.2, volume), i * 150);
+  });
+};
+
+const vibrate = (pattern) => {
+  if (navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch { /* ignore */ }
+  }
+};
+
+export const playNotification = (type, settings) => {
+  if (!settings || settings.soundMode === 'mute') return;
+  const { soundMode, taskCompleteSound, allCompleteSound, soundVolume } = settings;
+
+  if (soundMode === 'vibrate') {
+    if (type === 'task' && taskCompleteSound) vibrate([50, 50, 50]);
+    else if (type === 'all' && allCompleteSound) vibrate([100, 50, 100, 50, 200]);
+    return;
+  }
+
+  if (type === 'task' && taskCompleteSound) playTaskCompleteSound(soundVolume);
+  else if (type === 'all' && allCompleteSound) playAllCompleteSound(soundVolume);
+};
+
+export const testSound = (type, settings) => {
+  const s = settings || { soundVolume: 0.7 };
+  if (type === 'task') playTaskCompleteSound(s.soundVolume);
+  else if (type === 'all') playAllCompleteSound(s.soundVolume);
+};
+
+export const testVibrate = (type) => {
+  if (type === 'task') vibrate([50, 50, 50]);
+  else if (type === 'all') vibrate([100, 50, 100, 50, 200]);
+};
+
+// 兼容旧 API 签名（仍然导出 storage）
+export { storage };
+
+// === 兼容旧 Hook 签名的函数（内部委托到 store） ===
+export const useSettings = () => ({
+  settings: useStore(s => s.settings),
+  updateSettings: useStore(s => s.updateSettings),
+  addAllowedApp: useStore(s => s.addAllowedApp),
+  removeAllowedApp: useStore(s => s.removeAllowedApp),
+});
+
+export const useCalendar = () => ({
+  records: useStore(s => s.records),
+  setDayStatus: useStore(s => s.setDayStatus),
+  getDayStatus,
+  getMonthRecords,
+});
+
+export const useDailyPlans = () => ({
+  plans: useStore(s => s.plans),
+  createDailyPlan: useStore(s => s.createDailyPlan),
+  getDailyPlan,
+  toggleTask: useStore(s => s.toggleTask),
+  setTaskCompleted: useStore(s => s.setTaskCompleted),
+  updateTask: useStore(s => s.updateTask),
+  addTask: useStore(s => s.addTask),
+  removeTask: useStore(s => s.removeTask),
+  isDayCompleted,
+  getDayProgress,
+});
+
+export const useShortTermPlans = () => ({
+  shortPlans: useStore(s => s.shortPlans),
+  createShortTermPlan: useStore(s => s.createShortTermPlan),
+  markDayCompleted: useStore(s => s.markDayCompleted),
+  markDayTask: useStore(s => s.markDayTask),
+  getPlanProgress,
+  deletePlan: useStore(s => s.deletePlan),
+  updateDayTasks: useStore(s => s.updateDayTasks),
+  updateShortTermPlan: useStore(s => s.updateShortTermPlan),
+  getDayPhase,
+});
+
+export const useActiveSession = () => ({
+  session: useStore(s => s.session),
+  startSession: useStore(s => s.startSession),
+  completeSession: useStore(s => s.completeSession),
+  exitWithReason: useStore(s => s.exitWithReason),
+  emergencyExit: useStore(s => s.emergencyExit),
+  toggleSessionTask: useStore(s => s.toggleSessionTask),
+});
