@@ -55,7 +55,7 @@ jobs:
           if [ -n "${{ secrets.SIGNING_KEYSTORE }}" ]; then
             echo "🔐 Using production signing key from secrets"
             echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > app/build/signing/release-keystore.p12
-            echo "SIGNING_KEYSTORE_PATH=android/app/build/signing/release-keystore.p12" >> "$GITHUB_ENV"
+            echo "SIGNING_KEYSTORE_PATH=$(pwd)/app/build/signing/release-keystore.p12" >> "$GITHUB_ENV"
             echo "SIGNING_STORE_PASSWORD=${{ secrets.SIGNING_STORE_PASSWORD }}" >> "$GITHUB_ENV"
             echo "SIGNING_KEY_ALIAS=${{ secrets.SIGNING_KEY_ALIAS }}" >> "$GITHUB_ENV"
             echo "SIGNING_KEY_PASSWORD=${{ secrets.SIGNING_KEY_PASSWORD }}" >> "$GITHUB_ENV"
@@ -68,7 +68,7 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass debug123 -keypass debug123 \
               -dname "CN=Debug, OU=Dev, O=FocusSelf, L=Beijing, ST=Beijing, C=CN"
-            echo "SIGNING_KEYSTORE_PATH=android/app/build/signing/debug-keystore.jks" >> "$GITHUB_ENV"
+            echo "SIGNING_KEYSTORE_PATH=$(pwd)/app/build/signing/debug-keystore.jks" >> "$GITHUB_ENV"
             echo "SIGNING_STORE_PASSWORD=debug123" >> "$GITHUB_ENV"
             echo "SIGNING_KEY_ALIAS=debug" >> "$GITHUB_ENV"
             echo "SIGNING_KEY_PASSWORD=debug123" >> "$GITHUB_ENV"
