@@ -84,12 +84,8 @@ jobs:
           ./gradlew assembleRelease --stacktrace 2>&1 | tee /tmp/gradle.log
           EXIT=${PIPESTATUS[0]}
           if [ $EXIT -ne 0 ]; then
-            {
-              echo "## Gradle 构建失败"
-              echo '```'
-              grep -E -A 25 "What went wrong|FAILURE:|error:" /tmp/gradle.log | head -100
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            ERR=$(grep -E -A 20 "What went wrong|FAILURE:|Could not resolve|error:" /tmp/gradle.log | head -45 | tr '\n' '~' | cut -c1-2800)
+            echo "::error title=Gradle Error::$ERR"
             exit $EXIT
           fi
           echo "=== APK output ==="
